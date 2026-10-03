@@ -2,20 +2,18 @@
     "KPlugin": {
         "Authors": [
             {
-                "Email": "miradozk@users.noreply.github.com",
-                "Name": "miradozk"
+                "Name": "monkeydzeke"
             }
         ],
         "Category": "Productivity",
-        "Description": "Simple and elegant task manager for Plasma",
-        "Description[fr]": "Gestionnaire de tâches simple et élégant pour Plasma",
+        "Description": "A task manager for tracking relative urgency of recurring tasks balanced with cognitive capacity, built as a widget for KDE 6",
         "EnabledByDefault": true,
         "Icon": "view-list-details",
-        "Id": "thepiou.plasma.todo",
+        "Id": "taskifyintervals.plasma.todo",
         "License": "MIT",
         "Name": "To Do",
         "Version": "1.0.0",
-        "Website": "https://github.com/miradozk/todo-by-thepiou"
+        "Website": "https://github.com/monkeydzeke/interval-taskify"
     },
     "KPackageStructure": "Plasma/Applet",
     "X-Plasma-API-Minimum-Version": "6.0",

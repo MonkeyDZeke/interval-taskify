@@ -74,15 +74,15 @@ PlasmoidItem {
 
         const diffDays = Math.floor((today - todoDateOnly) / (1000 * 60 * 60 * 24))
 
-        if (diffDays === 0) return "Aujourd'hui"
-        if (diffDays === 1) return "Hier"
+        if (diffDays === 0) return "Today"
+        if (diffDays === 1) return "Yesterday"
         if (diffDays < 7) {
-            const days = ["Dimanche", "Lundi", "Mardi", "Mercredi", "Jeudi", "Vendredi", "Samedi"]
+            const days = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"]
             return days[todoDate.getDay()]
         }
 
-        const months = ["janvier", "février", "mars", "avril", "mai", "juin",
-                       "juillet", "août", "septembre", "octobre", "novembre", "décembre"]
+        const months = ["January", "February", "March", "April", "May", "June",
+                   "July", "August", "September", "October", "November", "December"]
         return todoDate.getDate() + " " + months[todoDate.getMonth()]
     }
 
@@ -213,7 +213,7 @@ PlasmoidItem {
                         id: inputField
                         Layout.fillWidth: true
                         Layout.preferredHeight: Kirigami.Units.gridUnit * 2.5
-                        placeholderText: "Ajouter une tâche..."
+                        placeholderText: "Add a task..."
                         leftPadding: Kirigami.Units.largeSpacing
                         rightPadding: Kirigami.Units.largeSpacing
 
@@ -225,7 +225,7 @@ PlasmoidItem {
 
                     QQC2.Button {
                         Layout.preferredHeight: Kirigami.Units.gridUnit * 2.5
-                        text: "Ajouter"
+                        text: "Add"
                         icon.name: "list-add"
                         highlighted: true
                         leftPadding: Kirigami.Units.largeSpacing * 1.5
@@ -243,7 +243,7 @@ PlasmoidItem {
                     spacing: Kirigami.Units.smallSpacing
 
                     QQC2.Button {
-                        text: "Tout " + root.getTodoCount("all")
+                        text: "All " + root.getTodoCount("all")
                         checkable: true
                         checked: root.currentFilter === "all"
                         flat: !checked
@@ -251,7 +251,7 @@ PlasmoidItem {
                     }
 
                     QQC2.Button {
-                        text: "Actives " + root.getTodoCount("active")
+                        text: "Active " + root.getTodoCount("active")
                         checkable: true
                         checked: root.currentFilter === "active"
                         flat: !checked
@@ -259,7 +259,7 @@ PlasmoidItem {
                     }
 
                     QQC2.Button {
-                        text: "Terminées " + root.getTodoCount("completed")
+                        text: "Completed " + root.getTodoCount("completed")
                         checkable: true
                         checked: root.currentFilter === "completed"
                         flat: !checked

@@ -1,37 +1,37 @@
 #!/bin/bash
 
-# Script de désinstallation du widget Plasma To Do
+# Plasma To Do widget uninstallation script
 
-WIDGET_NAME="thepiou.plasma.todo"
+WIDGET_NAME="taskifyintervals.plasma.todo"
 
 echo "==================================="
-echo "Désinstallation du widget To Do"
+echo "Uninstalling the To Do widget"
 echo "==================================="
 echo ""
 
-# Vérifier que kpackagetool6 est installé
+# Check that kpackagetool6 is installed
 if ! command -v kpackagetool6 &> /dev/null; then
-    echo "❌ Erreur: kpackagetool6 n'est pas installé"
+    echo "❌ Error: kpackagetool6 is not installed"
     exit 1
 fi
 
-# Vérifier si le widget est installé
-echo "🔍 Vérification de l'installation..."
+# Check whether the widget is installed
+echo "🔍 Checking the installation..."
 if ! kpackagetool6 --type=Plasma/Applet --show="$WIDGET_NAME" &> /dev/null; then
-    echo "⚠️  Le widget n'est pas installé"
+    echo "⚠️  The widget is not installed"
     exit 0
 fi
 
-# Désinstaller le widget
-echo "🗑️  Désinstallation du widget..."
+# Uninstall the widget
+echo "🗑️  Uninstalling the widget..."
 kpackagetool6 --type=Plasma/Applet --remove="$WIDGET_NAME"
 
 if [ $? -eq 0 ]; then
     echo ""
-    echo "✅ Widget désinstallé avec succès!"
+    echo "✅ Widget uninstalled successfully!"
     echo ""
 else
     echo ""
-    echo "❌ Erreur lors de la désinstallation"
+    echo "❌ Uninstallation failed"
     exit 1
 fi

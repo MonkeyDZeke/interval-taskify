@@ -1,54 +1,54 @@
 #!/bin/bash
 
-# Script d'installation du widget Plasma To Do
+# Plasma To Do widget installation script
 
-WIDGET_NAME="thepiou.plasma.todo"
+WIDGET_NAME="taskifyintervals.plasma.todo"
 WIDGET_DIR="plasma-widget"
 
 echo "==================================="
-echo "Installation du widget To Do"
+echo "Installing the To Do widget"
 echo "==================================="
 echo ""
 
-# Vérifier que le dossier du widget existe
+# Check that the widget directory exists
 if [ ! -d "$WIDGET_DIR" ]; then
-    echo "❌ Erreur: Le dossier $WIDGET_DIR n'existe pas"
+    echo "❌ Error: Widget directory $WIDGET_DIR does not exist"
     exit 1
 fi
 
-# Vérifier que kpackagetool6 est installé
+# Check that kpackagetool6 is installed
 if ! command -v kpackagetool6 &> /dev/null; then
-    echo "❌ Erreur: kpackagetool6 n'est pas installé"
-    echo "Installez-le avec: sudo pacman -S plasma-framework (Arch) ou sudo apt install plasma-framework (Debian/Ubuntu)"
+    echo "❌ Error: kpackagetool6 is not installed"
+    echo "Install it with: sudo pacman -S plasma-framework (Arch) or sudo apt install plasma-framework (Debian/Ubuntu)"
     exit 1
 fi
 
-# Désinstaller le widget s'il existe déjà
-echo "🔍 Vérification d'une installation existante..."
+# Uninstall the widget if it is already installed
+echo "🔍 Checking for an existing installation..."
 if kpackagetool6 --type=Plasma/Applet --show="$WIDGET_NAME" &> /dev/null; then
-    echo "⚠️  Widget déjà installé, désinstallation..."
+    echo "⚠️  Widget already installed; uninstalling..."
     kpackagetool6 --type=Plasma/Applet --remove="$WIDGET_NAME"
 fi
 
-# Installer le widget
-echo "📦 Installation du widget..."
+# Install the widget
+echo "📦 Installing the widget..."
 kpackagetool6 --type=Plasma/Applet --install "$WIDGET_DIR"
 
 if [ $? -eq 0 ]; then
     echo ""
-    echo "✅ Widget installé avec succès!"
+    echo "✅ Widget installed successfully!"
     echo ""
-    echo "Pour l'utiliser:"
-    echo "1. Clic droit sur le bureau ou le panneau"
-    echo "2. Sélectionnez 'Ajouter des widgets...'"
-    echo "3. Recherchez 'To Do'"
-    echo "4. Glissez-déposez le widget sur votre bureau ou panneau"
+    echo "To use it:"
+    echo "1. Right-click the desktop or panel"
+    echo "2. Select 'Add Widgets...'"
+    echo "3. Search for 'To Do'"
+    echo "4. Drag the widget onto your desktop or panel"
     echo ""
-    echo "Pour désinstaller:"
+    echo "To uninstall:"
     echo "  kpackagetool6 --type=Plasma/Applet --remove=$WIDGET_NAME"
     echo ""
 else
     echo ""
-    echo "❌ Erreur lors de l'installation"
+    echo "❌ Installation failed"
     exit 1
 fi

@@ -4,7 +4,7 @@
 
 const DB_NAME = "ToDoDB"
 const DB_VERSION = "1.0"
-const DB_DESCRIPTION = "To Do Todos Database"
+const DB_DESCRIPTION = "Interval Taskify task database"
 const DB_SIZE = 1000000
 
 var nextId = 1
@@ -116,26 +116,26 @@ function loadSampleData(plasmoid) {
 
     const sampleTodos = [
         // Today
-        { title: "Acheter du pain", completed: 0, created_at: now.toISOString() },
-        { title: "Appeler le dentiste", completed: 0, created_at: now.toISOString() },
-        { title: "Finir le rapport", completed: 1, created_at: now.toISOString() },
-        { title: "Répondre aux emails", completed: 0, created_at: now.toISOString() },
-        { title: "Visiter https://github.com/thepiou", completed: 0, created_at: now.toISOString() },
+        { title: "Buy bread", completed: 0, created_at: now.toISOString() },
+        { title: "Call the dentist", completed: 0, created_at: now.toISOString() },
+        { title: "Finish the report", completed: 1, created_at: now.toISOString() },
+        { title: "Reply to emails", completed: 0, created_at: now.toISOString() },
+        { title: "Visit https://github.com/monkeydzeke/interval-taskify", completed: 0, created_at: now.toISOString() },
 
         // Yesterday
-        { title: "Faire les courses", completed: 1, created_at: yesterday.toISOString() },
-        { title: "Payer les factures", completed: 1, created_at: yesterday.toISOString() },
-        { title: "Nettoyer la cuisine", completed: 0, created_at: yesterday.toISOString() },
+        { title: "Go grocery shopping", completed: 1, created_at: yesterday.toISOString() },
+        { title: "Pay the bills", completed: 1, created_at: yesterday.toISOString() },
+        { title: "Clean the kitchen", completed: 0, created_at: yesterday.toISOString() },
 
         // 2 days ago
-        { title: "Réunion équipe", completed: 1, created_at: twoDaysAgo.toISOString() },
-        { title: "Préparer présentation", completed: 1, created_at: twoDaysAgo.toISOString() },
-        { title: "Réviser le budget", completed: 0, created_at: twoDaysAgo.toISOString() },
+        { title: "Team meeting", completed: 1, created_at: twoDaysAgo.toISOString() },
+        { title: "Prepare presentation", completed: 1, created_at: twoDaysAgo.toISOString() },
+        { title: "Review the budget", completed: 0, created_at: twoDaysAgo.toISOString() },
 
         // Last week
-        { title: "Rendez-vous médecin", completed: 1, created_at: lastWeek.toISOString() },
-        { title: "Acheter cadeau anniversaire", completed: 1, created_at: lastWeek.toISOString() },
-        { title: "Réparer vélo", completed: 0, created_at: lastWeek.toISOString() }
+        { title: "Doctor's appointment", completed: 1, created_at: lastWeek.toISOString() },
+        { title: "Buy a birthday gift", completed: 1, created_at: lastWeek.toISOString() },
+        { title: "Repair the bike", completed: 0, created_at: lastWeek.toISOString() }
     ]
 
     database.transaction(function(tx) {
