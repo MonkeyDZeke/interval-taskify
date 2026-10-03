@@ -16,11 +16,7 @@ kpackagetool6 --type=Plasma/Applet --install "$WIDGET_DIR"
 if [ $? -eq 0 ]; then
     echo "✅ Widget reinstalled"
     echo "🔄 Restarting Plasma..."
-
-    # Restart plasmashell
-    killall plasmashell
-    sleep 2
-    plasmashell &> /dev/null &
+    plasmashell --replace &> /dev/null &
 
     echo "✅ Done! The widget has been updated."
 else

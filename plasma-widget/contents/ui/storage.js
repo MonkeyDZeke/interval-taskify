@@ -1,6 +1,6 @@
 // Simple localStorage-based storage for Plasma widget
 .pragma library
-.import QtQuick.LocalStorage 2.0 as LS
+.import QtQuick.LocalStorage as LS
 
 const DB_NAME = "IntervalTaskifyDB"
 const DB_VERSION = "1.0"
