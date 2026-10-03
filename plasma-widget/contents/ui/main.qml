@@ -12,8 +12,6 @@ PlasmoidItem {
     width: Kirigami.Units.gridUnit * 25
     height: Kirigami.Units.gridUnit * 35
 
-    preferredRepresentation: compactRepresentation
-
     property var todos: []
     property string currentFilter: "active"
     readonly property var stateOptions: [
