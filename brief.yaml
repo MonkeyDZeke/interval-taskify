@@ -1,0 +1,179 @@
+# ==============================================================================
+# DYNAMIC TASK SYSTEM CONFIGURATION & TECHNICAL SPECIFICATION
+# Architecture: Relative Urgency Leaderboard & Cognitive Capacity Tracker
+# ==============================================================================
+
+system_physics:
+  # ----------------------------------------------------------------------------
+  # TIME NORMALIZATION
+  # Real-world meaning: Scale invariance. Ensures a task 1 day late on a 3-day
+  # schedule feels mathematically equivalent to a task 1 week late on a 3-week schedule.
+  # ----------------------------------------------------------------------------
+  time_variable: "x"
+  formula_x: "delta_t / T"
+  variables:
+    delta_t:
+      unit: "days"
+      description: "Elapsed wall-clock time since last task completion timestamp."
+    T:
+      unit: "days"
+      description: "Target urgency interval (user-defined per task)."
+
+  # ----------------------------------------------------------------------------
+  # GLOBAL CURVE PARAMETERS
+  # Real-world meaning: Universal physics governing task acceleration across the app.
+  # ----------------------------------------------------------------------------
+  a:
+    value: 10.0
+    description: "Logarithmic early-gain curvature factor (0 <= x <= 1)."
+    behavior: "Reclaims ~75% of base weight S at half-interval (x = 0.5), strongly rewarding early proactive completions."
+
+  b:
+    value: 1.386
+    description: "Exponential growth rate factor (x > 1)."
+    behavior: "Doubles task weight (2.0 * S) at 50% overdue (x = 1.5) and quadruples weight (4.0 * S) at 100% overdue (x = 2.0)."
+
+  # ----------------------------------------------------------------------------
+  # DYNAMIC URGENCY WEIGHT EQUATIONS W(x)
+  # Real-world meaning: Measures current priority ranking on the leaderboard.
+  # ----------------------------------------------------------------------------
+  urgency_weight:
+    logarithmic_phase:
+      condition: "0 <= x <= 1"
+      equation: "W(x) = S * ( ln(1 + a * x) / ln(1 + a) )"
+      behavior: "Smoothly rises from 0 to S. Gain rate slows near x = 1."
+
+    exponential_phase:
+      condition: "x > 1"
+      equation: "W(x) = S * e^(b * (x - 1))"
+      behavior: "Accelerates rapidly past S, forcing long-neglected items to rise."
+
+# ==============================================================================
+# TASK PARAMETERS & BOUNDARIES
+# ==============================================================================
+
+significance_tiers:
+  # ----------------------------------------------------------------------------
+  # SIGNIFICANCE (S) - DRIVES LEADERBOARD RANKING ONLY
+  # Real-world meaning: Consequence/stakes of ignoring a task.
+  # Mathematical bound: Bound directly to exponential factor b so a Tier 4 task
+  # at epoch (x=1) equals a Tier 1 task that is exactly 1 interval overdue (x=2).
+  # ----------------------------------------------------------------------------
+  step_conversion_rule: "S_4 = S_1 * e^b = 1.0 * 4.0 = 4.0"
+  tiers:
+    tier_1:
+      name: "Low / Routine"
+      value: 1.0
+      description: "Flexible habits (e.g., casual reading, wiping counters)."
+    tier_2:
+      name: "Medium / Standard"
+      value: 1.6
+      description: "Routine household maintenance (e.g., vacuuming, groceries)."
+    tier_3:
+      name: "High / Important"
+      value: 2.5
+      description: "Key relational or operational items (e.g., calling mom, bill prep)."
+    tier_4:
+      name: "Critical / High-Stakes"
+      value: 4.0
+      description: "Hard consequence items (e.g., rent payment, car oil change)."
+
+effort_levels:
+  # ----------------------------------------------------------------------------
+  # EFFORT MULTIPLIER (E) - DRIVES CAPACITY CONSUMPTION ONLY
+  # Real-world meaning: Physical/Cognitive friction required to perform the task.
+  # Disentangled from Significance (S) to prevent high-stakes easy tasks from
+  # artificially exhausting capacity budgets.
+  # ----------------------------------------------------------------------------
+  presets:
+    quick:
+      value: 0.5 # Attention Units (AU)
+      duration_proxy: "< 5 mins"
+      description: "Minimal friction. Low context-switching cost (e.g., take pill, wipe table)."
+    standard:
+      value: 1.0 # Attention Units (AU)
+      duration_proxy: "15-30 mins"
+      description: "Moderate focus/energy (e.g., vacuum living room, 20-min phone call)."
+    heavy:
+      value: 2.5 # Attention Units (AU)
+      duration_proxy: "60+ mins"
+      description: "High energy or high friction (e.g., deep clean garage, tax prep)."
+
+# ==============================================================================
+# COGNITIVE DOMAINS & CAPACITY MODELING
+# ==============================================================================
+
+domains_and_capacity:
+  # ----------------------------------------------------------------------------
+  # ATTENTION UNIT (AU) DEFINITION
+  # 1.0 AU = Daily maintenance cost of a Standard Effort (E=1.0) task with a 1-day interval (T=1.0).
+  # Formula for Daily Maintenance Cost: C_i = E_i / T_i
+  # ----------------------------------------------------------------------------
+  cost_formula: "C_i = E_i / T_i"
+
+  channels:
+    executive_mental:
+      name: "Mental / Executive"
+      science_anchor: "Cowan's Working Memory Limit (4 +/- 1) & Deep Work Daily Cap"
+      max_daily_capacity_au: 5.0
+      description: "Holds executive function, focus, planning, and decision-making items."
+
+    physical_somatic:
+      name: "Physical / Somatic"
+      science_anchor: "Central Nervous System Recovery & Routine Habit Ceilings"
+      max_daily_capacity_au: 4.0
+      description: "Holds physical chores, manual labor, and movement maintenance."
+
+    social_relational:
+      name: "Social / Relational"
+      science_anchor: "Dunbar's Inner Circle (5 intimate core bonds)"
+      max_daily_capacity_au: 3.0
+      description: "Holds relationships, check-ins, family, and social maintenance."
+
+  system_ceiling:
+    total_baseline_au: 12.0 # Sum of 5.0 + 4.0 + 3.0
+    ui_heatmap_zones:
+      green: "0.0 to 8.4 AU (0% - 70%): Sustainable, leaves 30% buffer for surprises."
+      yellow: "8.4 to 12.0 AU (70% - 100%): Full capacity, vulnerable to backlog if disrupted."
+      red: "> 12.0 AU (> 100%): Overload, mathematically guarantees exponential backlogs."
+
+# ==============================================================================
+# FLUID CAPACITY & CRISIS MANAGEMENT (GLOBAL ENERGY DIAL)
+# ==============================================================================
+
+dynamic_energy_dial:
+  # ----------------------------------------------------------------------------
+  # Real-world meaning: Allows human bandwidth adjustment during illness/burnout.
+  # ----------------------------------------------------------------------------
+  energy_factor_range: "0.10 to 1.00" # User slider in UI (10% to 100%)
+
+  effective_capacity_formula: "L_effective = energy_factor * total_baseline_au"
+  overload_gap_formula: "L_overload = max(0, L_active - L_effective)"
+
+  auto_freeze_mechanics:
+    state_behavior: "When a task is 'Frozen/Paused', its normalized time x stops advancing (delta_t freezes)."
+    unfreeze_behavior: "Resumes growth from the exact x value where it was paused, eliminating debt/guilt."
+    trim_to_fit_triage:
+      step_1: "Sort active tasks by Significance (S) ASC, Interval (T) DESC."
+      step_2: "Auto-select lowest-stakes tasks for Freezing until L_active <= L_effective."
+      step_3: "Protect Tier 4 and explicitly tagged 'Self-Care/Survival' tasks from auto-freezing."
+
+  actionability_score:
+    # Used during low-energy states to highlight 'Quick Wins'
+    formula: "ROI = W(x) / E"
+    description: "Ranks tasks by Urgency Weight returned per unit of Effort expended."
+
+# ==============================================================================
+# ROUTING & LEADERBOARD POOLING
+# ==============================================================================
+
+leaderboard_routing:
+  top_n_selection:
+    pool_allocation_strategy: "Dynamic Category Sampling"
+    formula: "Category_Share = Category_Load_AU / Total_Active_Load_AU"
+    description: "Prevents a flood of overdue daily chores in one category from starving other domains."
+
+  proactive_radar_bucket:
+    condition: "x <= 1.0"
+    sorting: "W(x) / S DESC"
+    description: "Surfaces tasks approaching peak epoch that offer maximum proactive load reduction."
