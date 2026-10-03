@@ -16,7 +16,18 @@ PlasmoidItem {
     preferredRepresentation: compactRepresentation
 
     property var todos: []
-    property string currentFilter: "all" // all, active, inactive
+    property string currentFilter: "active"
+    readonly property var stateOptions: [
+        { text: "Active", value: "active" },
+        { text: "Frozen", value: "frozen" },
+        { text: "Hidden", value: "hidden" },
+        { text: "Paused", value: "paused" }
+    ]
+    readonly property var domainOptions: [
+        { text: "Mental / Executive", value: "executive_mental" },
+        { text: "Physical / Somatic", value: "physical_somatic" },
+        { text: "Social / Relational", value: "social_relational" }
+    ]
 
     Component.onCompleted: {
         Storage.initDatabase(plasmoid)
@@ -37,7 +48,17 @@ PlasmoidItem {
 
     function addTodo(text) {
         if (text.trim() === "") return
-        Storage.addTodo(plasmoid, text)
+        Storage.addTodo(plasmoid, text.trim(), {
+            interval_days: intervalInput.value,
+            significance: significanceInput.currentValue,
+            effort: effortInput.currentValue,
+            domain: domainInput.currentValue
+        })
+        loadTodos()
+    }
+
+    function setTodoState(id, state) {
+        Storage.setTodoState(plasmoid, id, state)
         loadTodos()
     }
 
@@ -61,29 +82,20 @@ PlasmoidItem {
         loadTodos()
     }
 
-    function getDateLabel(dateString) {
-        const todoDate = new Date(dateString)
-        const today = new Date()
-        today.setHours(0, 0, 0, 0)
-
-        const yesterday = new Date(today)
-        yesterday.setDate(yesterday.getDate() - 1)
-
-        const todoDateOnly = new Date(todoDate)
-        todoDateOnly.setHours(0, 0, 0, 0)
-
-        const diffDays = Math.floor((today - todoDateOnly) / (1000 * 60 * 60 * 24))
-
-        if (diffDays === 0) return "Today"
-        if (diffDays === 1) return "Yesterday"
-        if (diffDays < 7) {
-            const days = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"]
-            return days[todoDate.getDay()]
+    function getMetrics(todo) {
+        var intervalDays = Number(todo.interval_days)
+        var anchor = Date.parse(todo.urgency_anchor_at)
+        if (!isFinite(intervalDays) || intervalDays <= 0 || !isFinite(anchor)) {
+            return { elapsedDays: 0, x: 0, weight: 0 }
         }
 
-        const months = ["January", "February", "March", "April", "May", "June",
-                   "July", "August", "September", "October", "November", "December"]
-        return todoDate.getDate() + " " + months[todoDate.getMonth()]
+        var elapsedDays = Math.max(0, (Date.now() - anchor) / 86400000)
+        var x = elapsedDays / intervalDays
+        var significance = Number(todo.significance)
+        var weight = x <= 1
+                ? significance * Math.log(1 + 10 * x) / Math.log(11)
+                : significance * Math.exp(1.386 * (x - 1))
+        return { elapsedDays: elapsedDays, x: x, weight: weight }
     }
 
     function getFilteredTodos() {
@@ -98,6 +110,13 @@ PlasmoidItem {
                 filtered.push(todo)
             }
         }
+        filtered.sort(function(left, right) {
+            var leftActive = left.state === "active"
+            var rightActive = right.state === "active"
+            if (leftActive !== rightActive) return leftActive ? -1 : 1
+            if (leftActive) return getMetrics(right).weight - getMetrics(left).weight
+            return left.title.localeCompare(right.title)
+        })
         return filtered
     }
 
@@ -115,21 +134,24 @@ PlasmoidItem {
         return count
     }
 
-    function groupTodosByDate() {
-        const groups = {}
-        const filtered = getFilteredTodos()
-
-        for (let i = 0; i < filtered.length; i++) {
-            const todo = filtered[i]
-            const dateLabel = getDateLabel(todo.created_at)
-
-            if (!groups[dateLabel]) {
-                groups[dateLabel] = []
-            }
-            groups[dateLabel].push(todo)
+    function getCapacitySummary() {
+        var load = {
+            executive_mental: 0,
+            physical_somatic: 0,
+            social_relational: 0
+        }
+        var total = 0
+        for (var i = 0; i < todos.length; i++) {
+            var todo = todos[i]
+            if (todo.state !== "active") continue
+            var cost = Number(todo.effort) / Number(todo.interval_days)
+            if (!isFinite(cost)) continue
+            load[todo.domain] = (load[todo.domain] || 0) + cost
+            total += cost
         }
 
-        return groups
+        return "Daily load " + total.toFixed(1) + "/12 AU  |  Mental " + load.executive_mental.toFixed(1) + "/5" +
+                "  Physical " + load.physical_somatic.toFixed(1) + "/4  Social " + load.social_relational.toFixed(1) + "/3"
     }
 
     // Compact representation (for panel)
@@ -196,7 +218,7 @@ PlasmoidItem {
         // Header
         Rectangle {
             Layout.fillWidth: true
-            Layout.preferredHeight: Kirigami.Units.gridUnit * 7
+            Layout.preferredHeight: Kirigami.Units.gridUnit * 13
             color: Kirigami.Theme.backgroundColor
 
             ColumnLayout {
@@ -234,6 +256,76 @@ PlasmoidItem {
                             root.addTodo(inputField.text)
                             inputField.text = ""
                         }
+                    }
+                }
+
+                RowLayout {
+                    Layout.fillWidth: true
+                    spacing: Kirigami.Units.smallSpacing
+
+                    QQC2.Label { text: "Every" }
+
+                    QQC2.SpinBox {
+                        id: intervalInput
+                        from: 1
+                        to: 3650
+                        value: 7
+                        editable: true
+                        Layout.preferredWidth: Kirigami.Units.gridUnit * 6
+                        QQC2.ToolTip.text: "Task interval in days"
+                        QQC2.ToolTip.visible: hovered
+                    }
+
+                    QQC2.Label { text: "days" }
+
+                    QQC2.ComboBox {
+                        id: significanceInput
+                        Layout.fillWidth: true
+                        model: [
+                            { text: "Low", value: 1.0 },
+                            { text: "Medium", value: 1.6 },
+                            { text: "High", value: 2.5 },
+                            { text: "Critical", value: 4.0 }
+                        ]
+                        textRole: "text"
+                        valueRole: "value"
+                        QQC2.ToolTip.text: "Significance"
+                        QQC2.ToolTip.visible: hovered
+                    }
+
+                    QQC2.ComboBox {
+                        id: effortInput
+                        Layout.preferredWidth: Kirigami.Units.gridUnit * 7
+                        model: [
+                            { text: "Quick", value: 0.5 },
+                            { text: "Standard", value: 1.0 },
+                            { text: "Heavy", value: 2.5 }
+                        ]
+                        textRole: "text"
+                        valueRole: "value"
+                        QQC2.ToolTip.text: "Effort"
+                        QQC2.ToolTip.visible: hovered
+                    }
+                }
+
+                RowLayout {
+                    Layout.fillWidth: true
+                    spacing: Kirigami.Units.smallSpacing
+
+                    QQC2.ComboBox {
+                        id: domainInput
+                        Layout.fillWidth: true
+                        model: root.domainOptions
+                        textRole: "text"
+                        valueRole: "value"
+                    }
+
+                    QQC2.Button {
+                        text: "Demo data"
+                        icon.name: "view-refresh"
+                        onClicked: root.loadSampleData()
+                        QQC2.ToolTip.text: "Replace all tasks with example data"
+                        QQC2.ToolTip.visible: hovered
                     }
                 }
 
@@ -276,6 +368,22 @@ PlasmoidItem {
             Layout.fillWidth: true
         }
 
+        QQC2.Label {
+            Layout.fillWidth: true
+            Layout.preferredHeight: Kirigami.Units.gridUnit * 2.5
+            Layout.leftMargin: Kirigami.Units.largeSpacing
+            Layout.rightMargin: Kirigami.Units.largeSpacing
+            verticalAlignment: Text.AlignVCenter
+            wrapMode: Text.Wrap
+            text: root.getCapacitySummary()
+            color: Kirigami.Theme.disabledTextColor
+            font: Kirigami.Theme.smallFont
+        }
+
+        Kirigami.Separator {
+            Layout.fillWidth: true
+        }
+
         // Todo list
         QQC2.ScrollView {
             Layout.fillWidth: true
@@ -286,25 +394,11 @@ PlasmoidItem {
                 clip: true
                 spacing: 0
 
-                model: {
-                    const groups = root.groupTodosByDate()
-                    const items = []
-
-                    for (const dateLabel in groups) {
-                        items.push({ type: "header", text: dateLabel })
-
-                        const todosInGroup = groups[dateLabel]
-                        for (let i = 0; i < todosInGroup.length; i++) {
-                            items.push({ type: "todo", data: todosInGroup[i] })
-                        }
-                    }
-
-                    return items
-                }
+                model: root.getFilteredTodos()
 
                 delegate: Loader {
                     width: todoListView.width
-                    sourceComponent: modelData.type === "header" ? headerComponent : todoComponent
+                    sourceComponent: todoComponent
 
                     property var itemData: modelData
                 }
@@ -313,71 +407,62 @@ PlasmoidItem {
     }
 
     Component {
-        id: headerComponent
-
-        Item {
-            height: Kirigami.Units.gridUnit * 2
-
-            Kirigami.Heading {
-                level: 4
-                text: itemData.text
-                color: Kirigami.Theme.disabledTextColor
-                anchors.left: parent.left
-                anchors.leftMargin: Kirigami.Units.largeSpacing
-                anchors.verticalCenter: parent.verticalCenter
-            }
-        }
-    }
-
-    Component {
         id: todoComponent
 
         PlasmaComponents.ItemDelegate {
-            height: Kirigami.Units.gridUnit * 3
+            height: Kirigami.Units.gridUnit * 5
             width: ListView.view.width
 
             contentItem: RowLayout {
                 spacing: Kirigami.Units.largeSpacing
 
-                PlasmaComponents.ToolButton {
+                ColumnLayout {
+                    Layout.fillWidth: true
+                    spacing: 0
+
+                    QQC2.Label {
+                        Layout.fillWidth: true
+                        text: itemData.data.title
+                        elide: Text.ElideRight
+                        font.bold: itemData.data.state === "active"
+                        color: itemData.data.state === "active" ? Kirigami.Theme.textColor : Kirigami.Theme.disabledTextColor
+                    }
+
+                    QQC2.Label {
+                        Layout.fillWidth: true
+                        text: {
+                            if (itemData.data.state !== "active") return itemData.data.state
+                            var metrics = root.getMetrics(itemData.data)
+                            return "W " + metrics.weight.toFixed(2) + "  |  x " + metrics.x.toFixed(2)
+                        }
+                        color: Kirigami.Theme.disabledTextColor
+                        font: Kirigami.Theme.smallFont
+                    }
+                }
+
+                QQC2.ComboBox {
                     Layout.alignment: Qt.AlignVCenter
+                    Layout.preferredWidth: Kirigami.Units.gridUnit * 7
+                    model: root.stateOptions
+                    textRole: "text"
+                    valueRole: "value"
+                    currentIndex: indexOfValue(itemData.data.state)
+                    onActivated: root.setTodoState(itemData.data.id, currentValue)
+                }
+
+                PlasmaComponents.ToolButton {
                     visible: itemData.data.state === "active"
                     icon.name: "task-complete"
                     onClicked: root.completeTodo(itemData.data.id)
-
                     QQC2.ToolTip.text: "Mark complete"
                     QQC2.ToolTip.visible: hovered
                 }
 
-                // Todo text with URL support
-                QQC2.Label {
-                    Layout.fillWidth: true
-                    text: {
-                        var title = itemData.data.title
-                        // Convert URLs to clickable links
-                        var urlPattern = /(\b(https?|ftp):\/\/[-A-Z0-9+&@#\/%?=~_|!:,.;]*[-A-Z0-9+&@#\/%=~_|])/gim
-                        return title.replace(urlPattern, '<a href="$1">$1</a>')
-                    }
-                    textFormat: Text.RichText
-                    wrapMode: Text.Wrap
-                    color: itemData.data.state === "active" ? Kirigami.Theme.textColor : Kirigami.Theme.disabledTextColor
-                    onLinkActivated: function(link) {
-                        Qt.openUrlExternally(link)
-                    }
-
-                    MouseArea {
-                        anchors.fill: parent
-                        acceptedButtons: Qt.NoButton
-                        cursorShape: parent.hoveredLink ? Qt.PointingHandCursor : Qt.ArrowCursor
-                    }
-                }
-
-                // Delete button
                 PlasmaComponents.ToolButton {
                     icon.name: "edit-delete"
-                    icon.width: Kirigami.Units.iconSizes.small
-                    icon.height: Kirigami.Units.iconSizes.small
                     onClicked: root.deleteTodo(itemData.data.id)
+                    QQC2.ToolTip.text: "Delete task"
+                    QQC2.ToolTip.visible: hovered
                 }
             }
         }

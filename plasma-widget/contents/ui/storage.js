@@ -52,16 +52,20 @@ function getAllTodos(plasmoid) {
     return todos
 }
 
-function addTodo(plasmoid, title) {
+function addTodo(plasmoid, title, config) {
     var database = getDatabase()
     var now = new Date().toISOString()
+    config = config || {}
+    var todoId = null
 
     database.transaction(function(tx) {
-        tx.executeSql('INSERT INTO todos (title, created_at, urgency_anchor_at, interval_days, significance, effort, domain, state) VALUES (?, ?, ?, ?, ?, ?, ?, ?)',
-                     [title, now, now, 1.0, 1.0, 1.0, "executive_mental", "active"])
+        var result = tx.executeSql('INSERT INTO todos (title, created_at, urgency_anchor_at, interval_days, significance, effort, domain, state) VALUES (?, ?, ?, ?, ?, ?, ?, ?)',
+                                  [title, now, now, config.interval_days || 7, config.significance || 1.0,
+                                   config.effort || 1.0, config.domain || "executive_mental", "active"])
+        todoId = result.insertId
     })
 
-    return true
+    return todoId
 }
 
 function completeTodo(plasmoid, id) {
@@ -140,17 +144,25 @@ function loadSampleData(plasmoid) {
     clearAll(plasmoid)
 
     var sampleTodos = [
-        "Buy bread",
-        "Call the dentist",
-        "Finish the report",
-        "Reply to emails",
-        "Pay the bills",
-        "Clean the kitchen",
-        "Prepare presentation",
-        "Review the budget"
+        { title: "Water plants", interval_days: 3, significance: 1.0, effort: 0.5, domain: "physical_somatic", elapsed_days: 5 },
+        { title: "Plan the week", interval_days: 7, significance: 2.5, effort: 2.5, domain: "executive_mental", elapsed_days: 4 },
+        { title: "Check in with family", interval_days: 14, significance: 4.0, effort: 1.0, domain: "social_relational", elapsed_days: 3 },
+        { title: "Replace the air filter", interval_days: 30, significance: 1.6, effort: 1.0, domain: "physical_somatic", elapsed_days: 50 }
     ]
+    var now = Date.now()
+    var millisecondsPerDay = 24 * 60 * 60 * 1000
+    var database = getDatabase()
 
     for (var i = 0; i < sampleTodos.length; i++) {
-        addTodo(plasmoid, sampleTodos[i])
+        var sample = sampleTodos[i]
+        var completedAt = new Date(now - sample.elapsed_days * millisecondsPerDay).toISOString()
+        var createdAt = new Date(now - (sample.elapsed_days + sample.interval_days * 2) * millisecondsPerDay).toISOString()
+        var todoId = addTodo(plasmoid, sample.title, sample)
+
+        database.transaction(function(tx) {
+            tx.executeSql('UPDATE todos SET created_at = ?, last_completed_at = ?, urgency_anchor_at = ? WHERE id = ?',
+                         [createdAt, completedAt, completedAt, todoId])
+            tx.executeSql('INSERT INTO completions (todo_id, completed_at) VALUES (?, ?)', [todoId, completedAt])
+        })
     }
 }
