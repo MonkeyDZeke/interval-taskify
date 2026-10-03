@@ -90,6 +90,7 @@ PlasmoidItem {
         }
 
         var elapsedDays = Math.max(0, (Date.now() - anchor) / 86400000)
+        elapsedDays = Math.min(elapsedDays, Math.max(intervalDays * 10, 183))
         var x = elapsedDays / intervalDays
         var significance = Number(todo.significance)
         var weight = x <= 1
@@ -422,17 +423,17 @@ PlasmoidItem {
 
                     QQC2.Label {
                         Layout.fillWidth: true
-                        text: itemData.data.title
+                        text: itemData.title
                         elide: Text.ElideRight
-                        font.bold: itemData.data.state === "active"
-                        color: itemData.data.state === "active" ? Kirigami.Theme.textColor : Kirigami.Theme.disabledTextColor
+                        font.bold: itemData.state === "active"
+                        color: itemData.state === "active" ? Kirigami.Theme.textColor : Kirigami.Theme.disabledTextColor
                     }
 
                     QQC2.Label {
                         Layout.fillWidth: true
                         text: {
-                            if (itemData.data.state !== "active") return itemData.data.state
-                            var metrics = root.getMetrics(itemData.data)
+                            if (itemData.state !== "active") return itemData.state
+                            var metrics = root.getMetrics(itemData)
                             return "W " + metrics.weight.toFixed(2) + "  |  x " + metrics.x.toFixed(2)
                         }
                         color: Kirigami.Theme.disabledTextColor
@@ -446,21 +447,21 @@ PlasmoidItem {
                     model: root.stateOptions
                     textRole: "text"
                     valueRole: "value"
-                    currentIndex: indexOfValue(itemData.data.state)
-                    onActivated: root.setTodoState(itemData.data.id, currentValue)
+                    currentIndex: indexOfValue(itemData.state)
+                    onActivated: root.setTodoState(itemData.id, currentValue)
                 }
 
                 PlasmaComponents.ToolButton {
-                    visible: itemData.data.state === "active"
+                    visible: itemData.state === "active"
                     icon.name: "task-complete"
-                    onClicked: root.completeTodo(itemData.data.id)
+                    onClicked: root.completeTodo(itemData.id)
                     QQC2.ToolTip.text: "Mark complete"
                     QQC2.ToolTip.visible: hovered
                 }
 
                 PlasmaComponents.ToolButton {
                     icon.name: "edit-delete"
-                    onClicked: root.deleteTodo(itemData.data.id)
+                    onClicked: root.deleteTodo(itemData.id)
                     QQC2.ToolTip.text: "Delete task"
                     QQC2.ToolTip.visible: hovered
                 }
