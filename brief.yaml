@@ -99,6 +99,25 @@ effort_levels:
       duration_proxy: "60+ mins"
       description: "High energy or high friction (e.g., deep clean garage, tax prep)."
 
+todo_states:
+  default: active
+  calculation_eligible_states: [active]
+  states:
+    active:
+      description: "Included in urgency, actionability, capacity, routing, and leaderboard calculations."
+    frozen:
+      description: "Excluded from calculations and the leaderboard."
+      urgency_clock_behavior: "Hold elapsed interval time while frozen."
+      on_return_to_active: "Resume from the same elapsed interval position; time spent frozen does not advance urgency."
+    hidden:
+      description: "Excluded from calculations and the leaderboard."
+      urgency_clock_behavior: "Continue advancing as if the todo were active."
+      on_return_to_active: "Calculate urgency using the full elapsed time, including time spent hidden."
+    paused:
+      description: "Excluded from calculations and the leaderboard."
+      urgency_clock_behavior: "Do not calculate urgency while paused."
+      on_return_to_active: "Reset the urgency anchor to the reactivation time so x = 0; do not record a completion event."
+
 # ==============================================================================
 # COGNITIVE DOMAINS & CAPACITY MODELING
 # ==============================================================================
@@ -151,11 +170,11 @@ dynamic_energy_dial:
   overload_gap_formula: "L_overload = max(0, L_active - L_effective)"
 
   auto_freeze_mechanics:
-    state_behavior: "When a task is 'Frozen/Paused', its normalized time x stops advancing (delta_t freezes)."
-    unfreeze_behavior: "Resumes growth from the exact x value where it was paused, eliminating debt/guilt."
+    state_behavior: "Frozen todos are excluded from calculations and the leaderboard, and their urgency clock stops advancing. Hidden todos continue aging; paused todos restart their urgency clock when reactivated."
+    unfreeze_behavior: "Reactivating a frozen todo resumes from the same elapsed interval position, excluding time spent frozen."
     trim_to_fit_triage:
       step_1: "Sort active tasks by Significance (S) ASC, Interval (T) DESC."
-      step_2: "Auto-select lowest-stakes tasks for Freezing until L_active <= L_effective."
+      step_2: "Auto-select lowest-stakes active tasks to transition to frozen until L_active <= L_effective."
       step_3: "Protect Tier 4 and explicitly tagged 'Self-Care/Survival' tasks from auto-freezing."
 
   actionability_score:
