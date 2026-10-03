@@ -16,7 +16,7 @@ PlasmoidItem {
     preferredRepresentation: compactRepresentation
 
     property var todos: []
-    property string currentFilter: "all" // all, active, completed
+    property string currentFilter: "all" // all, active, inactive
 
     Component.onCompleted: {
         Storage.initDatabase(plasmoid)
@@ -41,8 +41,8 @@ PlasmoidItem {
         loadTodos()
     }
 
-    function toggleTodo(id) {
-        Storage.toggleTodo(plasmoid, id)
+    function completeTodo(id) {
+        Storage.completeTodo(plasmoid, id)
         loadTodos()
     }
 
@@ -92,9 +92,9 @@ PlasmoidItem {
             var todo = todos[i]
             if (currentFilter === "all") {
                 filtered.push(todo)
-            } else if (currentFilter === "active" && !todo.completed) {
+            } else if (currentFilter === "active" && todo.state === "active") {
                 filtered.push(todo)
-            } else if (currentFilter === "completed" && todo.completed) {
+            } else if (currentFilter === "inactive" && todo.state !== "active") {
                 filtered.push(todo)
             }
         }
@@ -106,9 +106,9 @@ PlasmoidItem {
         for (var i = 0; i < todos.length; i++) {
             if (filter === "all") {
                 count++
-            } else if (filter === "active" && !todos[i].completed) {
+            } else if (filter === "active" && todos[i].state === "active") {
                 count++
-            } else if (filter === "completed" && todos[i].completed) {
+            } else if (filter === "inactive" && todos[i].state !== "active") {
                 count++
             }
         }
@@ -148,7 +148,7 @@ PlasmoidItem {
                 visible: {
                     var incomplete = 0
                     for (var i = 0; i < root.todos.length; i++) {
-                        if (!root.todos[i].completed) incomplete++
+                        if (root.todos[i].state === "active") incomplete++
                     }
                     return incomplete > 0
                 }
@@ -167,7 +167,7 @@ PlasmoidItem {
                     text: {
                         var incomplete = 0
                         for (var i = 0; i < root.todos.length; i++) {
-                            if (!root.todos[i].completed) incomplete++
+                            if (root.todos[i].state === "active") incomplete++
                         }
                         return incomplete > 99 ? "99+" : incomplete.toString()
                     }
@@ -259,11 +259,11 @@ PlasmoidItem {
                     }
 
                     QQC2.Button {
-                        text: "Completed " + root.getTodoCount("completed")
+                        text: "Inactive " + root.getTodoCount("inactive")
                         checkable: true
-                        checked: root.currentFilter === "completed"
+                        checked: root.currentFilter === "inactive"
                         flat: !checked
-                        onClicked: root.currentFilter = "completed"
+                        onClicked: root.currentFilter = "inactive"
                     }
 
                     Item { Layout.fillWidth: true }
@@ -339,11 +339,14 @@ PlasmoidItem {
             contentItem: RowLayout {
                 spacing: Kirigami.Units.largeSpacing
 
-                // Checkbox using system colors
-                QQC2.CheckBox {
+                PlasmaComponents.ToolButton {
                     Layout.alignment: Qt.AlignVCenter
-                    checked: itemData.data.completed
-                    onClicked: root.toggleTodo(itemData.data.id)
+                    visible: itemData.data.state === "active"
+                    icon.name: "task-complete"
+                    onClicked: root.completeTodo(itemData.data.id)
+
+                    QQC2.ToolTip.text: "Mark complete"
+                    QQC2.ToolTip.visible: hovered
                 }
 
                 // Todo text with URL support
@@ -357,8 +360,7 @@ PlasmoidItem {
                     }
                     textFormat: Text.RichText
                     wrapMode: Text.Wrap
-                    font.strikeout: itemData.data.completed
-                    color: itemData.data.completed ? Kirigami.Theme.disabledTextColor : Kirigami.Theme.textColor
+                    color: itemData.data.state === "active" ? Kirigami.Theme.textColor : Kirigami.Theme.disabledTextColor
                     onLinkActivated: function(link) {
                         Qt.openUrlExternally(link)
                     }
