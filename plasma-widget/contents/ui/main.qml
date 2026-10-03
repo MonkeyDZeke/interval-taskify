@@ -45,14 +45,9 @@ PlasmoidItem {
         todos = Storage.getAllTodos(plasmoid)
     }
 
-    function addTodo(text) {
+    function addTodo(text, config) {
         if (text.trim() === "") return
-        Storage.addTodo(plasmoid, text.trim(), {
-            interval_days: intervalInput.value,
-            significance: significanceInput.currentValue,
-            effort: effortInput.currentValue,
-            domain: domainInput.currentValue
-        })
+        Storage.addTodo(plasmoid, text.trim(), config || {})
         loadTodos()
     }
 
@@ -240,7 +235,12 @@ PlasmoidItem {
                         rightPadding: Kirigami.Units.largeSpacing
 
                         Keys.onReturnPressed: {
-                            root.addTodo(text)
+                            root.addTodo(text, {
+                                interval_days: intervalInput.value,
+                                significance: significanceInput.currentValue,
+                                effort: effortInput.currentValue,
+                                domain: domainInput.currentValue
+                            })
                             text = ""
                         }
                     }
@@ -253,7 +253,12 @@ PlasmoidItem {
                         leftPadding: Kirigami.Units.largeSpacing * 1.5
                         rightPadding: Kirigami.Units.largeSpacing * 1.5
                         onClicked: {
-                            root.addTodo(inputField.text)
+                            root.addTodo(inputField.text, {
+                                interval_days: intervalInput.value,
+                                significance: significanceInput.currentValue,
+                                effort: effortInput.currentValue,
+                                domain: domainInput.currentValue
+                            })
                             inputField.text = ""
                         }
                     }
@@ -411,7 +416,7 @@ PlasmoidItem {
 
         PlasmaComponents.ItemDelegate {
             height: Kirigami.Units.gridUnit * 5
-            width: ListView.view.width
+            width: parent ? parent.width : todoListView.width
 
             contentItem: RowLayout {
                 spacing: Kirigami.Units.largeSpacing
