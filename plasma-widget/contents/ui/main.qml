@@ -39,6 +39,19 @@ PlasmoidItem {
         onTriggered: root.loadTodos()
     }
 
+    // Hidden component used for clipboard operations
+    TextEdit {
+        id: clipboardHelper
+        visible: false
+    }
+
+    function exportToClipboard() {
+        var jsonString = Storage.exportFullData(plasmoid)
+        clipboardHelper.text = jsonString
+        clipboardHelper.selectAll()
+        clipboardHelper.copy()
+    }
+
     function loadTodos() {
         todos = Storage.getAllTodos(plasmoid)
     }
@@ -321,6 +334,25 @@ PlasmoidItem {
                         model: root.domainOptions
                         textRole: "text"
                         valueRole: "value"
+                    }
+
+                    QQC2.Button {
+                        id: exportBtn
+                        text: "Export"
+                        icon.name: "document-export"
+                        onClicked: {
+                            root.exportToClipboard()
+                            exportBtn.text = "Copied!"
+                            resetTimer.start()
+                        }
+                        QQC2.ToolTip.text: "Copy full JSON data backup to clipboard"
+                        QQC2.ToolTip.visible: hovered
+
+                        Timer {
+                            id: resetTimer
+                            interval: 2000
+                            onTriggered: exportBtn.text = "Export"
+                        }
                     }
 
                     QQC2.Button {
