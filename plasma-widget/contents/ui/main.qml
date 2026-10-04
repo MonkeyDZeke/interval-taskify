@@ -14,6 +14,7 @@ PlasmoidItem {
 
     property var todos: []
     property string currentFilter: "active"
+    property var editingTodo: null
     readonly property var stateOptions: [
         { text: "Active", value: "active" },
         { text: "Frozen", value: "frozen" },
@@ -59,6 +60,21 @@ PlasmoidItem {
     function addTodo(text, config) {
         if (text.trim() === "") return
         Storage.addTodo(plasmoid, text.trim(), config || {})
+        loadTodos()
+    }
+
+    function startEditing(todo) {
+        editingTodo = todo
+    }
+
+    function cancelEditing() {
+        editingTodo = null
+    }
+
+    function saveEditingTodo(title, config) {
+        if (!editingTodo || title.trim() === "") return
+        Storage.updateTodo(plasmoid, editingTodo.id, title.trim(), config)
+        editingTodo = null
         loadTodos()
     }
 
@@ -220,6 +236,27 @@ PlasmoidItem {
     }
 
     fullRepresentation: ColumnLayout {
+        // Auto-fill form when editingTodo changes
+        Connections {
+            target: root
+            function onEditingTodoChanged() {
+                if (root.editingTodo) {
+                    inputField.text = root.editingTodo.title
+                    intervalInput.value = Number(root.editingTodo.interval_days) || 7
+                    daysAgoInput.value = Math.round(root.getMetrics(root.editingTodo).elapsedDays)
+                    significanceInput.currentIndex = Math.max(0, significanceInput.indexOfValue(Number(root.editingTodo.significance)))
+                    effortInput.currentIndex = Math.max(0, effortInput.indexOfValue(Number(root.editingTodo.effort)))
+                    domainInput.currentIndex = Math.max(0, domainInput.indexOfValue(root.editingTodo.domain))
+                } else {
+                    inputField.text = ""
+                    intervalInput.value = 7
+                    daysAgoInput.value = 0
+                    significanceInput.currentIndex = 0
+                    effortInput.currentIndex = 1
+                    domainInput.currentIndex = 0
+                }
+            }
+        }
         Layout.minimumWidth: Kirigami.Units.gridUnit * 20
         Layout.minimumHeight: Kirigami.Units.gridUnit * 25
         Layout.preferredWidth: Kirigami.Units.gridUnit * 25
@@ -237,7 +274,7 @@ PlasmoidItem {
                 anchors.margins: Kirigami.Units.largeSpacing
                 spacing: Kirigami.Units.smallSpacing
 
-                // Input field with Add button
+                // Input field with Add / Update / Cancel buttons
                 RowLayout {
                     Layout.fillWidth: true
                     spacing: Kirigami.Units.smallSpacing
@@ -246,23 +283,34 @@ PlasmoidItem {
                         id: inputField
                         Layout.fillWidth: true
                         Layout.preferredHeight: Kirigami.Units.gridUnit * 2.5
-                        placeholderText: "Add a task..."
+                        placeholderText: root.editingTodo ? "Edit task title..." : "Add a task..."
                         leftPadding: Kirigami.Units.largeSpacing
                         rightPadding: Kirigami.Units.largeSpacing
 
                         Keys.onReturnPressed: {
-                            root.addTodo(text, {
-                                interval_days: intervalInput.value,
-                                days_ago: daysAgoInput.value,
-                                significance: significanceInput.currentValue,
-                                effort: effortInput.currentValue,
-                                domain: domainInput.currentValue
-                            })
-                            text = ""
+                            if (root.editingTodo) {
+                                root.saveEditingTodo(text, {
+                                    interval_days: intervalInput.value,
+                                    days_ago: daysAgoInput.value,
+                                    significance: significanceInput.currentValue,
+                                    effort: effortInput.currentValue,
+                                    domain: domainInput.currentValue
+                                })
+                            } else {
+                                root.addTodo(text, {
+                                    interval_days: intervalInput.value,
+                                    days_ago: daysAgoInput.value,
+                                    significance: significanceInput.currentValue,
+                                    effort: effortInput.currentValue,
+                                    domain: domainInput.currentValue
+                                })
+                                text = ""
+                            }
                         }
                     }
 
                     QQC2.Button {
+                        visible: root.editingTodo === null
                         Layout.preferredHeight: Kirigami.Units.gridUnit * 2.5
                         text: "Add"
                         icon.name: "list-add"
@@ -279,6 +327,33 @@ PlasmoidItem {
                             })
                             inputField.text = ""
                         }
+                    }
+
+                    QQC2.Button {
+                        visible: root.editingTodo !== null
+                        Layout.preferredHeight: Kirigami.Units.gridUnit * 2.5
+                        text: "Update"
+                        icon.name: "dialog-ok"
+                        highlighted: true
+                        leftPadding: Kirigami.Units.largeSpacing * 1.5
+                        rightPadding: Kirigami.Units.largeSpacing * 1.5
+                        onClicked: {
+                            root.saveEditingTodo(inputField.text, {
+                                interval_days: intervalInput.value,
+                                days_ago: daysAgoInput.value,
+                                significance: significanceInput.currentValue,
+                                effort: effortInput.currentValue,
+                                domain: domainInput.currentValue
+                            })
+                        }
+                    }
+
+                    QQC2.Button {
+                        visible: root.editingTodo !== null
+                        Layout.preferredHeight: Kirigami.Units.gridUnit * 2.5
+                        text: "Cancel"
+                        icon.name: "dialog-cancel"
+                        onClicked: root.cancelEditing()
                     }
                 }
 
@@ -505,16 +580,11 @@ PlasmoidItem {
                     onActivated: root.setTodoState(itemData.id, currentValue)
                 }
 
-                QQC2.SpinBox {
+                PlasmaComponents.ToolButton {
                     visible: itemData.state === "active"
-                    Layout.alignment: Qt.AlignVCenter
-                    Layout.preferredWidth: Kirigami.Units.gridUnit * 5
-                    from: 0
-                    to: 3650
-                    value: Math.round(root.getMetrics(itemData).elapsedDays)
-                    editable: true
-                    onValueModified: root.updateTaskElapsedDays(itemData.id, value)
-                    QQC2.ToolTip.text: "Edit days elapsed since last completion"
+                    icon.name: "document-edit"
+                    onClicked: root.startEditing(itemData)
+                    QQC2.ToolTip.text: "Edit task"
                     QQC2.ToolTip.visible: hovered
                 }
 

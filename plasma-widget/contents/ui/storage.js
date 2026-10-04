@@ -226,3 +226,22 @@ function updateTaskElapsedDays(plasmoid, id, daysAgo) {
 
     return true
 }
+
+function updateTodo(plasmoid, id, title, config) {
+    var database = getDatabase()
+    var nowMs = Date.now()
+    config = config || {}
+
+    var daysAgo = Number(config.days_ago) || 0
+    var anchorMs = nowMs - (daysAgo * 86400000)
+    var anchorIso = new Date(anchorMs).toISOString()
+    var nowIso = new Date(nowMs).toISOString()
+
+    database.transaction(function (tx) {
+        tx.executeSql('UPDATE todos SET title = ?, urgency_anchor_at = ?, last_completed_at = ?, interval_days = ?, significance = ?, effort = ?, domain = ? WHERE id = ?',
+            [title, anchorIso, daysAgo > 0 ? anchorIso : null, config.interval_days || 7,
+                config.significance || 1.0, config.effort || 1.0, config.domain || "executive_mental", id])
+    })
+
+    return true
+}
