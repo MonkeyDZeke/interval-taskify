@@ -67,6 +67,11 @@ PlasmoidItem {
         loadTodos()
     }
 
+    function updateTaskElapsedDays(id, daysAgo) {
+        Storage.updateTaskElapsedDays(plasmoid, id, daysAgo)
+        loadTodos()
+    }
+
     function completeTodo(id) {
         Storage.completeTodo(plasmoid, id)
         loadTodos()
@@ -248,6 +253,7 @@ PlasmoidItem {
                         Keys.onReturnPressed: {
                             root.addTodo(text, {
                                 interval_days: intervalInput.value,
+                                days_ago: daysAgoInput.value,
                                 significance: significanceInput.currentValue,
                                 effort: effortInput.currentValue,
                                 domain: domainInput.currentValue
@@ -266,6 +272,7 @@ PlasmoidItem {
                         onClicked: {
                             root.addTodo(inputField.text, {
                                 interval_days: intervalInput.value,
+                                days_ago: daysAgoInput.value,
                                 significance: significanceInput.currentValue,
                                 effort: effortInput.currentValue,
                                 domain: domainInput.currentValue
@@ -287,12 +294,25 @@ PlasmoidItem {
                         to: 3650
                         value: 7
                         editable: true
-                        Layout.preferredWidth: Kirigami.Units.gridUnit * 6
+                        Layout.preferredWidth: Kirigami.Units.gridUnit * 5
                         QQC2.ToolTip.text: "Task interval in days"
                         QQC2.ToolTip.visible: hovered
                     }
 
-                    QQC2.Label { text: "days" }
+                    QQC2.Label { text: "days | Done" }
+
+                    QQC2.SpinBox {
+                        id: daysAgoInput
+                        from: 0
+                        to: 3650
+                        value: 0
+                        editable: true
+                        Layout.preferredWidth: Kirigami.Units.gridUnit * 5
+                        QQC2.ToolTip.text: "Days since task was last completed"
+                        QQC2.ToolTip.visible: hovered
+                    }
+
+                    QQC2.Label { text: "days ago" }
 
                     QQC2.ComboBox {
                         id: significanceInput
@@ -311,7 +331,7 @@ PlasmoidItem {
 
                     QQC2.ComboBox {
                         id: effortInput
-                        Layout.preferredWidth: Kirigami.Units.gridUnit * 7
+                        Layout.preferredWidth: Kirigami.Units.gridUnit * 6
                         model: [
                             { text: "Quick", value: 0.5 },
                             { text: "Standard", value: 1.0 },
@@ -483,6 +503,19 @@ PlasmoidItem {
                     valueRole: "value"
                     currentIndex: indexOfValue(itemData.state)
                     onActivated: root.setTodoState(itemData.id, currentValue)
+                }
+
+                QQC2.SpinBox {
+                    visible: itemData.state === "active"
+                    Layout.alignment: Qt.AlignVCenter
+                    Layout.preferredWidth: Kirigami.Units.gridUnit * 5
+                    from: 0
+                    to: 3650
+                    value: Math.round(root.getMetrics(itemData).elapsedDays)
+                    editable: true
+                    onValueModified: root.updateTaskElapsedDays(itemData.id, value)
+                    QQC2.ToolTip.text: "Edit days elapsed since last completion"
+                    QQC2.ToolTip.visible: hovered
                 }
 
                 PlasmaComponents.ToolButton {

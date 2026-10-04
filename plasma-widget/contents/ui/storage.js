@@ -54,13 +54,19 @@ function getAllTodos(plasmoid) {
 
 function addTodo(plasmoid, title, config) {
     var database = getDatabase()
-    var now = new Date().toISOString()
+    var nowMs = Date.now()
     config = config || {}
+
+    var daysAgo = Number(config.days_ago) || 0
+    var anchorMs = nowMs - (daysAgo * 86400000)
+    var anchorIso = new Date(anchorMs).toISOString()
+    var nowIso = new Date(nowMs).toISOString()
     var todoId = null
 
     database.transaction(function (tx) {
-        var result = tx.executeSql('INSERT INTO todos (title, created_at, urgency_anchor_at, interval_days, significance, effort, domain, state) VALUES (?, ?, ?, ?, ?, ?, ?, ?)',
-            [title, now, now, config.interval_days || 7, config.significance || 1.0,
+        var result = tx.executeSql('INSERT INTO todos (title, created_at, last_completed_at, urgency_anchor_at, interval_days, significance, effort, domain, state) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)',
+            [title, nowIso, daysAgo > 0 ? anchorIso : null, anchorIso,
+                config.interval_days || 7, config.significance || 1.0,
                 config.effort || 1.0, config.domain || "executive_mental", "active"])
         todoId = result.insertId
     })
@@ -206,4 +212,17 @@ function exportFullData(plasmoid) {
     })
 
     return JSON.stringify(data, null, 2)
+}
+
+function updateTaskElapsedDays(plasmoid, id, daysAgo) {
+    var database = getDatabase()
+    var anchorMs = Date.now() - (Math.max(0, Number(daysAgo)) * 86400000)
+    var anchorIso = new Date(anchorMs).toISOString()
+
+    database.transaction(function (tx) {
+        tx.executeSql('UPDATE todos SET urgency_anchor_at = ?, last_completed_at = ? WHERE id = ?',
+            [anchorIso, anchorIso, id])
+    })
+
+    return true
 }
