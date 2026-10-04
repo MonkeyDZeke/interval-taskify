@@ -4,7 +4,7 @@ import QtQuick.Controls as QQC2
 import org.kde.plasma.plasmoid
 import org.kde.plasma.components as PlasmaComponents
 import org.kde.kirigami as Kirigami
-import "storage.js" as Storage
+import "ApiClient.js" as ApiClient
 
 PlasmoidItem {
     id: root
@@ -13,8 +13,11 @@ PlasmoidItem {
     height: Kirigami.Units.gridUnit * 35
 
     property var todos: []
+    property var summaryData: null
+    property bool serverOnline: false
     property string currentFilter: "active"
     property var editingTodo: null
+
     readonly property var stateOptions: [
         { text: "Active", value: "active" },
         { text: "Frozen", value: "frozen" },
@@ -28,39 +31,49 @@ PlasmoidItem {
     ]
 
     Component.onCompleted: {
-        Storage.initDatabase(plasmoid)
         loadTodos()
     }
 
-    // Auto-refresh every second to sync between instances
+    // Auto-refresh every 2 seconds to poll the REST API backend
     Timer {
-        interval: 1000
+        interval: 2000
         running: true
         repeat: true
         onTriggered: root.loadTodos()
     }
 
-    // Hidden component used for clipboard operations
-    TextEdit {
-        id: clipboardHelper
-        visible: false
-    }
-
-    function exportToClipboard() {
-        var jsonString = Storage.exportFullData(plasmoid)
-        clipboardHelper.text = jsonString
-        clipboardHelper.selectAll()
-        clipboardHelper.copy()
-    }
-
     function loadTodos() {
-        todos = Storage.getAllTodos(plasmoid)
+        ApiClient.getTasks("all", function(err, response) {
+            if (err) {
+                root.serverOnline = false
+                return
+            }
+            root.serverOnline = true
+            root.todos = response.tasks || []
+        })
+
+        ApiClient.getSummary(1.0, function(err, response) {
+            if (!err) {
+                root.summaryData = response
+            }
+        })
     }
 
     function addTodo(text, config) {
         if (text.trim() === "") return
-        Storage.addTodo(plasmoid, text.trim(), config || {})
-        loadTodos()
+        ApiClient.addTask(text.trim(), config || {}, function(err, response) {
+            if (!err) loadTodos()
+        })
+    }
+
+    function saveEditingTodo(text, config) {
+        if (!editingTodo || text.trim() === "") return
+        ApiClient.updateTask(editingTodo.id, text.trim(), config || {}, function(err, response) {
+            if (!err) {
+                editingTodo = null
+                loadTodos()
+            }
+        })
     }
 
     function startEditing(todo) {
@@ -71,47 +84,69 @@ PlasmoidItem {
         editingTodo = null
     }
 
-    function saveEditingTodo(title, config) {
-        if (!editingTodo || title.trim() === "") return
-        Storage.updateTodo(plasmoid, editingTodo.id, title.trim(), config)
-        editingTodo = null
-        loadTodos()
-    }
-
     function setTodoState(id, state) {
-        Storage.setTodoState(plasmoid, id, state)
-        loadTodos()
-    }
-
-    function updateTaskElapsedDays(id, daysAgo) {
-        Storage.updateTaskElapsedDays(plasmoid, id, daysAgo)
-        loadTodos()
+        ApiClient.setTaskState(id, state, function(err, response) {
+            if (!err) loadTodos()
+        })
     }
 
     function completeTodo(id) {
-        Storage.completeTodo(plasmoid, id)
-        loadTodos()
+        ApiClient.completeTask(id, function(err, response) {
+            if (!err) loadTodos()
+        })
     }
 
     function deleteTodo(id) {
-        Storage.deleteTodo(plasmoid, id)
-        loadTodos()
+        ApiClient.deleteTask(id, function(err, response) {
+            if (!err) loadTodos()
+        })
     }
 
-    function clearAllTodos() {
-        Storage.clearAll(plasmoid)
-        loadTodos()
+    function exportToClipboard() {
+        ApiClient.exportData(function(err, data) {
+            if (!err) {
+                clipboardHelper.text = JSON.stringify(data, null, 2)
+                clipboardHelper.selectAll()
+                clipboardHelper.copy()
+            }
+        })
     }
 
-    function loadSampleData() {
-        Storage.loadSampleData(plasmoid)
-        loadTodos()
+    function getMetrics(todo) {
+        // Use server-provided metrics if available
+        if (todo.metrics) {
+            return {
+                elapsedDays: todo.metrics.elapsed_days || 0,
+                x: todo.metrics.x || 0,
+                weight: todo.metrics.weight || 0,
+                statusText: todo.metrics.statusText || ""
+            }
+        }
+
+        // Fallback calculation for offline rendering
+        var intervalDays = Number(todo.interval_days)
+        var anchor = Date.parse(todo.urgency_anchor_at)
+        if (!isFinite(intervalDays) || intervalDays <= 0 || !isFinite(anchor)) {
+            return { elapsedDays: 0, x: 0, weight: 0, statusText: "Invalid" }
+        }
+
+        var elapsedDays = Math.max(0, (Date.now() - anchor) / 86400000)
+        var x = elapsedDays / intervalDays
+        var significance = Number(todo.significance)
+        var weight = x <= 1
+                ? significance * Math.log(1 + 10 * x) / Math.log(11)
+                : significance * Math.exp(1.386 * (x - 1))
+
+        return { elapsedDays: elapsedDays, x: x, weight: weight, statusText: "" }
     }
 
     function getStatusText(todo) {
         if (todo.state !== "active") return todo.state.toUpperCase()
+        if (todo.metrics && todo.metrics.statusText) {
+            return todo.metrics.statusText + "  •  W " + todo.metrics.weight.toFixed(2)
+        }
 
-        var metrics = root.getMetrics(todo)
+        var metrics = getMetrics(todo)
         var intervalDays = Number(todo.interval_days)
         var diffDays = Math.round(intervalDays - metrics.elapsedDays)
 
@@ -126,23 +161,6 @@ PlasmoidItem {
         }
 
         return status + "  •  W " + metrics.weight.toFixed(2)
-    }
-
-    function getMetrics(todo) {
-        var intervalDays = Number(todo.interval_days)
-        var anchor = Date.parse(todo.urgency_anchor_at)
-        if (!isFinite(intervalDays) || intervalDays <= 0 || !isFinite(anchor)) {
-            return { elapsedDays: 0, x: 0, weight: 0 }
-        }
-
-        var elapsedDays = Math.max(0, (Date.now() - anchor) / 86400000)
-        elapsedDays = Math.min(elapsedDays, Math.max(intervalDays * 10, 183))
-        var x = elapsedDays / intervalDays
-        var significance = Number(todo.significance)
-        var weight = x <= 1
-                ? significance * Math.log(1 + 10 * x) / Math.log(11)
-                : significance * Math.exp(1.386 * (x - 1))
-        return { elapsedDays: elapsedDays, x: x, weight: weight }
     }
 
     function getFilteredTodos() {
@@ -182,23 +200,26 @@ PlasmoidItem {
     }
 
     function getCapacitySummary() {
-        var load = {
-            executive_mental: 0,
-            physical_somatic: 0,
-            social_relational: 0
+        if (summaryData) {
+            var dl = summaryData.domain_loads || {}
+            var m = dl.executive_mental ? dl.executive_mental.current : 0
+            var p = dl.physical_somatic ? dl.physical_somatic.current : 0
+            var s = dl.social_relational ? dl.social_relational.current : 0
+            return "Total Weight: " + summaryData.total_weight.toFixed(2) + " W  |  Daily load " +
+                   summaryData.total_active_cost_au.toFixed(1) + "/" + summaryData.effective_capacity_au.toFixed(1) + " AU  |  Mental " +
+                   m.toFixed(1) + "/5  Physical " + p.toFixed(1) + "/4  Social " + s.toFixed(1) + "/3"
         }
+
+        // Fallback summary computation
+        var load = { executive_mental: 0, physical_somatic: 0, social_relational: 0 }
         var totalCost = 0
         var totalWeight = 0
 
         for (var i = 0; i < todos.length; i++) {
             var todo = todos[i]
             if (todo.state !== "active") continue
-
-            // 1. Sum Urgency Weight (W)
-            var metrics = root.getMetrics(todo)
+            var metrics = getMetrics(todo)
             totalWeight += metrics.weight
-
-            // 2. Sum Daily Capacity Cost (AU)
             var cost = Number(todo.effort) / Number(todo.interval_days)
             if (isFinite(cost)) {
                 load[todo.domain] = (load[todo.domain] || 0) + cost
@@ -210,61 +231,19 @@ PlasmoidItem {
                load.executive_mental.toFixed(1) + "/5  Physical " + load.physical_somatic.toFixed(1) + "/4  Social " + load.social_relational.toFixed(1) + "/3"
     }
 
-    // Compact representation (for panel)
-    compactRepresentation: Item {
-        Layout.preferredWidth: Kirigami.Units.iconSizes.medium
-        Layout.preferredHeight: Kirigami.Units.iconSizes.medium
-
-        Kirigami.Icon {
-            id: icon
-            anchors.fill: parent
-            source: "view-list-details"
-            active: mouseArea.containsMouse
-
-            // Badge showing number of incomplete todos
-            Rectangle {
-                visible: {
-                    var incomplete = 0
-                    for (var i = 0; i < root.todos.length; i++) {
-                        if (root.todos[i].state === "active") incomplete++
-                    }
-                    return incomplete > 0
-                }
-                anchors.right: parent.right
-                anchors.top: parent.top
-                anchors.rightMargin: -4
-                anchors.topMargin: -4
-                width: Math.max(16, badgeText.width + 6)
-                height: 16
-                radius: 8
-                color: Kirigami.Theme.highlightColor
-
-                QQC2.Label {
-                    id: badgeText
-                    anchors.centerIn: parent
-                    text: {
-                        var incomplete = 0
-                        for (var i = 0; i < root.todos.length; i++) {
-                            if (root.todos[i].state === "active") incomplete++
-                        }
-                        return incomplete > 99 ? "99+" : incomplete.toString()
-                    }
-                    color: "white"
-                    font.pixelSize: 10
-                    font.bold: true
-                }
-            }
-        }
-
-        MouseArea {
-            id: mouseArea
-            anchors.fill: parent
-            hoverEnabled: true
-            onClicked: root.expanded = !root.expanded
-        }
+    // Hidden component used for clipboard operations
+    TextEdit {
+        id: clipboardHelper
+        visible: false
     }
 
     fullRepresentation: ColumnLayout {
+        Layout.minimumWidth: Kirigami.Units.gridUnit * 20
+        Layout.minimumHeight: Kirigami.Units.gridUnit * 25
+        Layout.preferredWidth: Kirigami.Units.gridUnit * 25
+        Layout.preferredHeight: Kirigami.Units.gridUnit * 35
+        spacing: 0
+
         // Auto-fill form when editingTodo changes
         Connections {
             target: root
@@ -286,11 +265,6 @@ PlasmoidItem {
                 }
             }
         }
-        Layout.minimumWidth: Kirigami.Units.gridUnit * 20
-        Layout.minimumHeight: Kirigami.Units.gridUnit * 25
-        Layout.preferredWidth: Kirigami.Units.gridUnit * 25
-        Layout.preferredHeight: Kirigami.Units.gridUnit * 35
-        spacing: 0
 
         // Header
         Rectangle {
@@ -317,22 +291,17 @@ PlasmoidItem {
                         rightPadding: Kirigami.Units.largeSpacing
 
                         Keys.onReturnPressed: {
+                            var config = {
+                                interval_days: intervalInput.value,
+                                days_ago: daysAgoInput.value,
+                                significance: significanceInput.currentValue,
+                                effort: effortInput.currentValue,
+                                domain: domainInput.currentValue
+                            }
                             if (root.editingTodo) {
-                                root.saveEditingTodo(text, {
-                                    interval_days: intervalInput.value,
-                                    days_ago: daysAgoInput.value,
-                                    significance: significanceInput.currentValue,
-                                    effort: effortInput.currentValue,
-                                    domain: domainInput.currentValue
-                                })
+                                root.saveEditingTodo(text, config)
                             } else {
-                                root.addTodo(text, {
-                                    interval_days: intervalInput.value,
-                                    days_ago: daysAgoInput.value,
-                                    significance: significanceInput.currentValue,
-                                    effort: effortInput.currentValue,
-                                    domain: domainInput.currentValue
-                                })
+                                root.addTodo(text, config)
                                 text = ""
                             }
                         }
@@ -469,7 +438,7 @@ PlasmoidItem {
                             exportBtn.text = "Copied!"
                             resetTimer.start()
                         }
-                        QQC2.ToolTip.text: "Copy full JSON data backup to clipboard"
+                        QQC2.ToolTip.text: "Copy full JSON data backup from service"
                         QQC2.ToolTip.visible: hovered
 
                         Timer {
@@ -478,17 +447,9 @@ PlasmoidItem {
                             onTriggered: exportBtn.text = "Export"
                         }
                     }
-
-                    QQC2.Button {
-                        text: "Demo data"
-                        icon.name: "view-refresh"
-                        onClicked: root.loadSampleData()
-                        QQC2.ToolTip.text: "Replace all tasks with example data"
-                        QQC2.ToolTip.visible: hovered
-                    }
                 }
 
-                // Filters
+                // Filters & Service Status
                 RowLayout {
                     Layout.fillWidth: true
                     spacing: Kirigami.Units.smallSpacing
@@ -518,6 +479,13 @@ PlasmoidItem {
                     }
 
                     Item { Layout.fillWidth: true }
+
+                    // Online / Offline Status Badge
+                    QQC2.Label {
+                        text: root.serverOnline ? "● Service Online" : "● Offline (Cached)"
+                        color: root.serverOnline ? Kirigami.Theme.positiveTextColor : Kirigami.Theme.disabledTextColor
+                        font: Kirigami.Theme.smallFont
+                    }
                 }
             }
         }

@@ -3,7 +3,7 @@
 # Development script: reinstall and reload Plasma
 
 WIDGET_NAME="taskifyintervals.plasma.todo"
-WIDGET_DIR="plasma-widget"
+WIDGET_DIR="clients/plasma-widget"
 
 echo "🔄 Updating widget..."
 
