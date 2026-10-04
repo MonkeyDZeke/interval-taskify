@@ -108,6 +108,26 @@ PlasmoidItem {
         loadTodos()
     }
 
+    function getStatusText(todo) {
+        if (todo.state !== "active") return todo.state.toUpperCase()
+
+        var metrics = root.getMetrics(todo)
+        var intervalDays = Number(todo.interval_days)
+        var diffDays = Math.round(intervalDays - metrics.elapsedDays)
+
+        var status = ""
+        if (diffDays > 0) {
+            status = "Due in " + diffDays + (diffDays === 1 ? " day" : " days")
+        } else if (diffDays === 0) {
+            status = "Due today"
+        } else {
+            var overdueDays = Math.abs(diffDays)
+            status = "Overdue " + overdueDays + (overdueDays === 1 ? " day" : " days")
+        }
+
+        return status + "  •  W " + metrics.weight.toFixed(2)
+    }
+
     function getMetrics(todo) {
         var intervalDays = Number(todo.interval_days)
         var anchor = Date.parse(todo.urgency_anchor_at)
@@ -559,14 +579,32 @@ PlasmoidItem {
                     }
 
                     QQC2.Label {
+                        id: statusLabel
                         Layout.fillWidth: true
-                        text: {
-                            if (itemData.state !== "active") return itemData.state
-                            var metrics = root.getMetrics(itemData)
-                            return "W " + metrics.weight.toFixed(2) + "  |  x " + metrics.x.toFixed(2)
-                        }
-                        color: Kirigami.Theme.disabledTextColor
+                        text: root.getStatusText(itemData)
                         font: Kirigami.Theme.smallFont
+                        color: {
+                            if (itemData.state !== "active") return Kirigami.Theme.disabledTextColor
+                            var metrics = root.getMetrics(itemData)
+                            return metrics.x > 1.0 ? Kirigami.Theme.negativeTextColor : Kirigami.Theme.disabledTextColor
+                        }
+
+                        MouseArea {
+                            id: statusHover
+                            anchors.fill: parent
+                            hoverEnabled: true
+
+                            QQC2.ToolTip.text: {
+                                var metrics = root.getMetrics(itemData)
+                                return "Interval (T): " + itemData.interval_days + " days\n" +
+                                       "Elapsed (Δt): " + metrics.elapsedDays.toFixed(1) + " days\n" +
+                                       "Interval Ratio (x): " + metrics.x.toFixed(2) + "x\n" +
+                                       "Urgency Weight (W): " + metrics.weight.toFixed(2) + "\n" +
+                                       "Significance (S): " + itemData.significance + "\n" +
+                                       "Effort (E): " + itemData.effort + " AU"
+                            }
+                            QQC2.ToolTip.visible: statusHover.containsMouse
+                        }
                     }
                 }
 
