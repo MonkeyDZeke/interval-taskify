@@ -187,18 +187,27 @@ PlasmoidItem {
             physical_somatic: 0,
             social_relational: 0
         }
-        var total = 0
+        var totalCost = 0
+        var totalWeight = 0
+
         for (var i = 0; i < todos.length; i++) {
             var todo = todos[i]
             if (todo.state !== "active") continue
+
+            // 1. Sum Urgency Weight (W)
+            var metrics = root.getMetrics(todo)
+            totalWeight += metrics.weight
+
+            // 2. Sum Daily Capacity Cost (AU)
             var cost = Number(todo.effort) / Number(todo.interval_days)
-            if (!isFinite(cost)) continue
-            load[todo.domain] = (load[todo.domain] || 0) + cost
-            total += cost
+            if (isFinite(cost)) {
+                load[todo.domain] = (load[todo.domain] || 0) + cost
+                totalCost += cost
+            }
         }
 
-        return "Daily load " + total.toFixed(1) + "/12 AU  |  Mental " + load.executive_mental.toFixed(1) + "/5" +
-                "  Physical " + load.physical_somatic.toFixed(1) + "/4  Social " + load.social_relational.toFixed(1) + "/3"
+        return "Total Weight: " + totalWeight.toFixed(2) + " W  |  Daily load " + totalCost.toFixed(1) + "/12 AU  |  Mental " +
+               load.executive_mental.toFixed(1) + "/5  Physical " + load.physical_somatic.toFixed(1) + "/4  Social " + load.social_relational.toFixed(1) + "/3"
     }
 
     // Compact representation (for panel)
