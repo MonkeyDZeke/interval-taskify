@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 
-const BASE_URL = process.env.TASKIFY_URL || "http://localhost:8080/api/v1";
+const BASE_URL = process.env.TASKIFY_URL || "http://localhost:8085/api/v1";
 
 // Simple ANSI color helpers
 const colors = {

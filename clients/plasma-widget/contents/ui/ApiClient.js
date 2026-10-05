@@ -1,6 +1,6 @@
 .pragma library
 
-var baseUrl = "http://localhost:8080/api/v1"
+var baseUrl = "http://localhost:8085/api/v1"
 
 function request(method, path, body, callback) {
   var xhr = new XMLHttpRequest()
