@@ -48,6 +48,16 @@ system_physics:
       equation: "W(x) = S * e^(b * (x - 1))"
       behavior: "Accelerates rapidly past S, forcing long-neglected items to rise."
 
+  # ----------------------------------------------------------------------------
+  # AGGREGATE ACTIVE URGENCY SCORE
+  # Real-world meaning: System-wide macro pressure gauge.
+  # ----------------------------------------------------------------------------
+  aggregate_urgency_score:
+    formula: "W_total = sum(W_i) for all i in calculation_eligible_states"
+    unit: "Urgency Weight Units (W)"
+    description: "Real-time sum of urgency weight across all active tasks."
+    behavior: "Climbs continuously as active tasks age; drops immediately upon task completion to provide macro feedback on backlog reduction."
+
 # ==============================================================================
 # TASK PARAMETERS, RECURRENCE & BOUNDARIES
 # ==============================================================================
@@ -70,6 +80,20 @@ recurrence_and_lifecycle:
         action: "Mark completion timestamp and halt urgency clock."
         target_state: "completed"
         description: "Task transitions to the terminal completed state permanently."
+
+  # ----------------------------------------------------------------------------
+  # COMPLETION BACKDATING / HISTORICAL OFFSET
+  # Real-world meaning: Allows seeding or retroactively updating task execution time.
+  # ----------------------------------------------------------------------------
+  completion_backdating:
+    parameter: "days_ago"
+    type: "number (days)"
+    default: 0.0
+    description: "Allows initializing or overriding the elapsed time delta_t during creation or editing."
+    mechanics:
+      urgency_anchor_calculation: "urgency_anchor_at = current_timestamp - (days_ago * 86400000 ms)"
+      last_completed_at_behavior: "Set to urgency_anchor_at if days_ago > 0, otherwise null on new tasks."
+      use_case: "Seeding existing habits or backdated completions without waiting for wall-clock time to elapse."
 
 significance_tiers:
   # ----------------------------------------------------------------------------
