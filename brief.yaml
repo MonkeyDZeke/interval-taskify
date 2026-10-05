@@ -17,7 +17,7 @@ system_physics:
       description: "Elapsed wall-clock time since last task completion or activation timestamp."
     T:
       unit: "days"
-      description: "Target urgency interval (user-defined per task)."
+      description: "Target urgency interval (user-defined per task or dynamically adjusted)."
 
   # ----------------------------------------------------------------------------
   # GLOBAL CURVE PARAMETERS
@@ -58,6 +58,27 @@ system_physics:
     description: "Real-time sum of urgency weight across all active tasks."
     behavior: "Climbs continuously as active tasks age; drops immediately upon task completion to provide macro feedback on backlog reduction."
 
+  # ----------------------------------------------------------------------------
+  # DYNAMIC INTERVALS (SPACED REPETITION ADAPTATION)
+  # Real-world meaning: Algorithmic adaptation of target interval T based on user execution timing.
+  # ----------------------------------------------------------------------------
+  dynamic_intervals:
+    enabled: true
+    description: "Dynamically expands or contracts target interval T upon completion based on interval ratio x at execution."
+    adaptation_logic:
+      early_completion:
+        condition: "x < 0.8"
+        action: "Expand T (e.g., T_new = T * (1 + alpha * (1 - x)))"
+        behavior: "If consistently completed well ahead of schedule, increase interval to lower overall maintenance frequency."
+      on_time_completion:
+        condition: "0.8 <= x <= 1.2"
+        action: "Maintain T (or slight expansion)"
+        behavior: "Interval matches user rhythm; keep target steady."
+      overdue_completion:
+        condition: "x > 1.2"
+        action: "Contract T toward base value"
+        behavior: "If consistently neglected or completed late, reduce interval or reset to baseline to reinforce habit frequency."
+
 # ==============================================================================
 # TASK PARAMETERS, RECURRENCE & BOUNDARIES
 # ==============================================================================
@@ -94,6 +115,25 @@ recurrence_and_lifecycle:
       urgency_anchor_calculation: "urgency_anchor_at = current_timestamp - (days_ago * 86400000 ms)"
       last_completed_at_behavior: "Set to urgency_anchor_at if days_ago > 0, otherwise null on new tasks."
       use_case: "Seeding existing habits or backdated completions without waiting for wall-clock time to elapse."
+
+  # ----------------------------------------------------------------------------
+  # RIDER SUBTASKS
+  # Real-world meaning: Attached sub-elements tied to parent task completions.
+  # ----------------------------------------------------------------------------
+  rider_subtasks:
+    types:
+      once_off:
+        description: "Single-instance detail attached specifically to the NEXT completion of a parent task."
+        example: "Bring book to loan someone next time you visit them."
+        lifecycle: "Automatically archived or detached upon parent task execution."
+
+      recurring_rotation:
+        description: "Subtask pool tied to a parent task, executed dynamically rather than in strict circular order."
+        example: "Parent: 'Vacuum', Subtasks: ['Living Room', 'Office', 'Study']."
+        rotation_mechanics:
+          selection_rule: "Max elapsed time since last subtask completion (delta_t_subtask MAX)."
+          behavior: "The top-ranked subtask is always whichever item hasn't been completed in the longest duration."
+          multi_completion_support: "Allows completing one, multiple, or all subtasks in a single execution event without disrupting the relative staleness order of remaining subtasks."
 
 significance_tiers:
   # ----------------------------------------------------------------------------
@@ -190,7 +230,7 @@ viability_windows:
     outside_window: "Todo is treated as conditionally 'hidden'. Suppressed from leaderboard and capacity allocations until window opens."
 
 # ==============================================================================
-# COGNITIVE DOMAINS & CAPACITY MODELING
+# COGNITIVE DOMAINS, CONTEXTS & CAPACITY MODELING
 # ==============================================================================
 
 domains_and_capacity:
@@ -220,12 +260,41 @@ domains_and_capacity:
       max_daily_capacity_au: 3.0
       description: "Holds relationships, check-ins, family, and social maintenance."
 
+  # ----------------------------------------------------------------------------
+  # SCIENCE-BACKED BURNOUT & OVERWHELM THRESHOLD
+  # Real-world meaning: The point where accumulated overdue task debt triggers
+  # executive function fatigue, stress bleedthrough, and systemic burnout.
+  # ----------------------------------------------------------------------------
+  burnout_overwhelm_threshold:
+    science_anchor: "Allostatic Load Theory (McEwen & Stellar) & Ego Depletion in Executive Control (Baumeister)"
+    overdue_debt_threshold_ratio: 0.25 # Overdue tasks (x > 1.0) consuming >25% of baseline capacity (3.0 AU)
+    capacity_overload_ratio: 1.00     # Active daily load exceeding 100% of baseline capacity (12.0 AU)
+    description: "Threshold at which cognitive debt shifts from localized friction to system-wide executive depletion."
+
+  # ----------------------------------------------------------------------------
+  # CONTEXT SWITCHER (ENVIRONMENTS)
+  # Real-world meaning: Segregates tasks into discrete life spheres (e.g., Work vs. Home vs. Study).
+  # ----------------------------------------------------------------------------
+  context_switcher:
+    contexts: ["work", "home", "study"]
+    active_context: "user_selected"
+    compartmentalization:
+      load_isolation: "Capacity calculations and domain caps apply independently per context during nominal conditions."
+      overload_bleedthrough:
+        enabled: true
+        threshold_ref: "domains_and_capacity.burnout_overwhelm_threshold"
+        trigger_condition: "Context Overdue Debt (C_overdue) > (0.25 * L_baseline) OR Context Load (L_active) > L_baseline"
+        bleed_factor: 0.35 # Non-linear decay penalty coefficient
+        dynamic_capacity_adaptation:
+          formula: "L_effective_adjacent = L_baseline_adjacent * (1.0 - bleed_factor * min(1.0, (C_overdue_excess / (0.25 * L_baseline))))"
+          mechanics: "When a context crosses the Burnout & Overwhelm Threshold due to heavy overdue backlog (x > 1.0), Allostatic Load causes involuntary cognitive spillover. This dynamically reduces the effective capacity ceiling (L_effective) of adjacent contexts (e.g., Work overwhelm automatically shrinks available daily capacity for Home and Study)."
+
   system_ceiling:
     total_baseline_au: 12.0 # Sum of 5.0 + 4.0 + 3.0
     ui_heatmap_zones:
       green: "0.0 to 8.4 AU (0% - 70%): Sustainable, leaves 30% buffer for surprises."
-      yellow: "8.4 to 12.0 AU (70% - 100%): Full capacity, vulnerable to backlog if disrupted."
-      red: "> 12.0 AU (> 100%): Overload, mathematically guarantees exponential backlogs."
+      yellow: "8.4 to 12.0 AU (70% - 100%): Nominal capacity limit."
+      red: "> 12.0 AU (> 100% OR Overdue Debt > 25%): Burnout / Overload Zone. Exceeds Allostatic Threshold and triggers Context Bleedthrough penalties."
 
 # ==============================================================================
 # FLUID CAPACITY & CRISIS MANAGEMENT (GLOBAL ENERGY DIAL)
