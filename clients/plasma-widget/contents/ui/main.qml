@@ -116,7 +116,7 @@ PlasmoidItem {
         // Use server-provided metrics if available
         if (todo.metrics) {
             return {
-                elapsedDays: todo.metrics.elapsed_days || 0,
+                elapsedDays: todo.metrics.elapsedDays || 0,
                 x: todo.metrics.x || 0,
                 weight: todo.metrics.weight || 0,
                 statusText: todo.metrics.statusText || ""
