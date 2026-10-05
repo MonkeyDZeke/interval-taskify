@@ -14,7 +14,7 @@ system_physics:
   variables:
     delta_t:
       unit: "days"
-      description: "Elapsed wall-clock time since last task completion timestamp."
+      description: "Elapsed wall-clock time since last task completion or activation timestamp."
     T:
       unit: "days"
       description: "Target urgency interval (user-defined per task)."
@@ -49,8 +49,27 @@ system_physics:
       behavior: "Accelerates rapidly past S, forcing long-neglected items to rise."
 
 # ==============================================================================
-# TASK PARAMETERS & BOUNDARIES
+# TASK PARAMETERS, RECURRENCE & BOUNDARIES
 # ==============================================================================
+
+recurrence_and_lifecycle:
+  # ----------------------------------------------------------------------------
+  # SINGLETON VS RECURRING TASK SPECIFICATION
+  # Simple boolean determines completion logic and state transition path.
+  # ----------------------------------------------------------------------------
+  is_recurring:
+    type: "boolean"
+    default: true
+    description: "Determines task behavior upon completion."
+    completion_handler:
+      recurring_true:
+        action: "Reset urgency anchor timestamp (delta_t = 0)."
+        target_state: "active"
+        description: "Task remains active and immediately begins a new urgency cycle."
+      recurring_false:
+        action: "Mark completion timestamp and halt urgency clock."
+        target_state: "completed"
+        description: "Task transitions to the terminal completed state permanently."
 
 significance_tiers:
   # ----------------------------------------------------------------------------
@@ -117,6 +136,34 @@ todo_states:
       description: "Excluded from calculations and the leaderboard."
       urgency_clock_behavior: "Do not calculate urgency while paused."
       on_return_to_active: "Reset the urgency anchor to the reactivation time so x = 0; do not record a completion event."
+    completed:
+      description: "Terminal state for non-recurring singletons (is_recurring: false) after task execution."
+      urgency_clock_behavior: "Clock stopped permanently. Excluded from urgency, capacity, leaderboard, and routing calculations."
+      on_return_to_active: "If un-completed or reactivated manually, reset urgency anchor to current timestamp (delta_t = 0)."
+
+# ==============================================================================
+# WINDOWS OF VIABILITY (TEMPORAL AVAILABILITY CONSTRAINTS)
+# ==============================================================================
+
+viability_windows:
+  description: "Restricts task visibility and actionable calculations based on temporal schedules."
+  evaluation_rule: "Tasks evaluated outside their viability window dynamically inherit 'hidden' state mechanics."
+  urgency_clock_interaction: " Urgency clock continues advancing during non-viable periods (matches 'hidden' state physics) so urgency accurately reflects full elapsed time when the task becomes viable."
+
+  supported_window_types:
+    day_of_week:
+      example: ["saturday", "sunday"]
+      description: "Tasks viable only on specific days (e.g., weekend chores)."
+    time_of_day:
+      example: { start: "09:00", end: "17:00" }
+      description: "Tasks restricted to specific business or daylight hours."
+    date_range:
+      example: { start: "2026-11-01", end: "2026-12-31" }
+      description: "Seasonal or calendar-bounded tasks."
+
+  state_routing_logic:
+    inside_window: "Todo operates according to its primary state (typically active)."
+    outside_window: "Todo is treated as conditionally 'hidden'. Suppressed from leaderboard and capacity allocations until window opens."
 
 # ==============================================================================
 # COGNITIVE DOMAINS & CAPACITY MODELING
