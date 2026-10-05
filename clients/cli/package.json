@@ -1,0 +1,14 @@
+{
+  "name": "interval-taskify-cli",
+  "version": "1.0.0",
+  "description": "CLI client for Interval Taskify service",
+  "main": "taskify.js",
+  "bin": {
+    "taskify": "./taskify.js"
+  },
+  "scripts": {
+    "top": "node taskify.js top",
+    "ls": "node taskify.js ls",
+    "summary": "node taskify.js summary"
+  }
+}
