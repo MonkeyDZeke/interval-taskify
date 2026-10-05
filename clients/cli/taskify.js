@@ -32,6 +32,39 @@ async function api(path, options = {}) {
   }
 }
 
+// Command: Lite Thermal Printer Output (Top 1/3 Leaderboard, 32-Char Max Width)
+async function cmdLite() {
+  const data = await api("/tasks?filter=active");
+  let tasks = data.tasks || [];
+
+  console.log("TOP TASK LEADERBOARD");
+  console.log("--------------------------------");
+
+  if (tasks.length === 0) {
+    console.log("No active tasks.");
+    return;
+  }
+
+  // Take top third of active leaderboard
+  const limit = Math.ceil(tasks.length / 3);
+  const selectedTasks = tasks.slice(0, limit);
+  const MAX_WIDTH = 32;
+
+  selectedTasks.forEach(t => {
+    const weightStr = `(${t.metrics.weight.toFixed(2)} W)`;
+    const availableForTitle = MAX_WIDTH - weightStr.length - 1;
+
+    let title = t.title;
+    if (title.length > availableForTitle) {
+      title = title.slice(0, availableForTitle);
+    }
+
+    const padLen = Math.max(1, MAX_WIDTH - title.length - weightStr.length);
+    const line = `${title}${" ".repeat(padLen)}${weightStr}`;
+    console.log(line);
+  });
+}
+
 // Command: Top N Priorities
 async function cmdTop(limitArg) {
   const limit = parseInt(limitArg, 10) || 3;
@@ -163,6 +196,7 @@ ${colors.bold}COMMANDS:${colors.reset}
                               -d <executive_mental|physical_somatic|social_relational>
                               -a <days_ago>
   summary               View capacity load & domain AU breakdown
+  lite | --lite         Format top 1/3 of leaderboard for 32-col receipt printer
   help                  Show this menu
   `);
 }
@@ -173,6 +207,10 @@ const [, , cmd, ...args] = process.argv;
 switch (cmd) {
   case "top":
     cmdTop(args[0]);
+    break;
+  case "lite":
+  case "--lite":
+    cmdLite();
     break;
   case "ls":
   case "list":
