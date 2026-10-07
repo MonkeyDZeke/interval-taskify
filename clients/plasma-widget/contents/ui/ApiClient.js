@@ -1,9 +1,9 @@
 .pragma library
 
-var baseUrl = "http://localhost:8085/api/v1"
+const baseUrl = "http://localhost:8085/api/v1"
 
 function request(method, path, body, callback) {
-  var xhr = new XMLHttpRequest()
+  const xhr = new XMLHttpRequest()
   xhr.open(method, baseUrl + path, true)
   xhr.setRequestHeader("Content-Type", "application/json")
   xhr.timeout = 3000
@@ -12,7 +12,7 @@ function request(method, path, body, callback) {
     if (xhr.readyState === XMLHttpRequest.DONE) {
       if (xhr.status >= 200 && xhr.status < 300) {
         try {
-          var response = JSON.parse(xhr.responseText)
+          const response = JSON.parse(xhr.responseText)
           callback(null, response)
         } catch (e) {
           callback({ error: "Invalid JSON response" }, null)
@@ -39,17 +39,17 @@ function request(method, path, body, callback) {
 }
 
 function getTasks(filter, callback) {
-  var query = filter ? "?filter=" + encodeURIComponent(filter) : ""
+  const query = filter ? "?filter=" + encodeURIComponent(filter) : ""
   request("GET", "/tasks" + query, null, callback)
 }
 
 function getSummary(energyFactor, callback) {
-  var query = energyFactor ? "?energy_factor=" + encodeURIComponent(energyFactor) : ""
+  const query = energyFactor ? "?energy_factor=" + encodeURIComponent(energyFactor) : ""
   request("GET", "/summary" + query, null, callback)
 }
 
 function addTask(title, config, callback) {
-  var payload = {
+  const payload = {
     title: title,
     interval_days: config.interval_days || 7,
     days_ago: config.days_ago || 0,
@@ -61,7 +61,7 @@ function addTask(title, config, callback) {
 }
 
 function updateTask(id, title, config, callback) {
-  var payload = {
+  const payload = {
     title: title,
     interval_days: config.interval_days,
     days_ago: config.days_ago,
