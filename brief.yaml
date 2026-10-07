@@ -40,44 +40,13 @@ system_physics:
   urgency_weight:
     logarithmic_phase:
       condition: "0 <= x <= 1"
-      equation: "W(x) = S * ( ln(1 + a * x) / ln(1 + a) )"
-      behavior: "Smoothly rises from 0 to S. Gain rate slows near x = 1."
+      equation: "W(x) = S_effective * ( ln(1 + a * x) / ln(1 + a) )"
+      behavior: "Smoothly rises from 0 to S_effective. Gain rate slows near x = 1."
 
     exponential_phase:
       condition: "x > 1"
-      equation: "W(x) = S * e^(b * (x - 1))"
-      behavior: "Accelerates rapidly past S, forcing long-neglected items to rise."
-
-  # ----------------------------------------------------------------------------
-  # AGGREGATE ACTIVE URGENCY SCORE
-  # Real-world meaning: System-wide macro pressure gauge.
-  # ----------------------------------------------------------------------------
-  aggregate_urgency_score:
-    formula: "W_total = sum(W_i) for all i in calculation_eligible_states"
-    unit: "Urgency Weight Units (W)"
-    description: "Real-time sum of urgency weight across all active tasks."
-    behavior: "Climbs continuously as active tasks age; drops immediately upon task completion to provide macro feedback on backlog reduction."
-
-  # ----------------------------------------------------------------------------
-  # DYNAMIC INTERVALS (SPACED REPETITION ADAPTATION)
-  # Real-world meaning: Algorithmic adaptation of target interval T based on user execution timing.
-  # ----------------------------------------------------------------------------
-  dynamic_intervals:
-    enabled: true
-    description: "Dynamically expands or contracts target interval T upon completion based on interval ratio x at execution."
-    adaptation_logic:
-      early_completion:
-        condition: "x < 0.8"
-        action: "Expand T (e.g., T_new = T * (1 + alpha * (1 - x)))"
-        behavior: "If consistently completed well ahead of schedule, increase interval to lower overall maintenance frequency."
-      on_time_completion:
-        condition: "0.8 <= x <= 1.2"
-        action: "Maintain T (or slight expansion)"
-        behavior: "Interval matches user rhythm; keep target steady."
-      overdue_completion:
-        condition: "x > 1.2"
-        action: "Contract T toward base value"
-        behavior: "If consistently neglected or completed late, reduce interval or reset to baseline to reinforce habit frequency."
+      equation: "W(x) = S_effective * e^(b * (x - 1))"
+      behavior: "Accelerates rapidly past S_effective, forcing long-neglected items to rise."
 
 # ==============================================================================
 # TASK PARAMETERS, RECURRENCE & BOUNDARIES
@@ -86,7 +55,6 @@ system_physics:
 recurrence_and_lifecycle:
   # ----------------------------------------------------------------------------
   # SINGLETON VS RECURRING TASK SPECIFICATION
-  # Simple boolean determines completion logic and state transition path.
   # ----------------------------------------------------------------------------
   is_recurring:
     type: "boolean"
@@ -94,52 +62,19 @@ recurrence_and_lifecycle:
     description: "Determines task behavior upon completion."
     completion_handler:
       recurring_true:
-        action: "Reset urgency anchor timestamp (delta_t = 0)."
+        action: "Reset urgency anchor timestamp (delta_t = 0). Maintain deferment_count intact."
         target_state: "active"
-        description: "Task remains active and immediately begins a new urgency cycle."
+        description: "Task remains active, resets base significance (clearing temporary debuffs), and begins a new urgency cycle."
       recurring_false:
-        action: "Mark completion timestamp and halt urgency clock."
+        action: "Mark completion timestamp and halt urgency clock. Maintain deferment_count intact."
         target_state: "completed"
-        description: "Task transitions to the terminal completed state permanently."
-
-  # ----------------------------------------------------------------------------
-  # COMPLETION BACKDATING / HISTORICAL OFFSET
-  # Real-world meaning: Allows seeding or retroactively updating task execution time.
-  # ----------------------------------------------------------------------------
-  completion_backdating:
-    parameter: "days_ago"
-    type: "number (days)"
-    default: 0.0
-    description: "Allows initializing or overriding the elapsed time delta_t during creation or editing."
-    mechanics:
-      urgency_anchor_calculation: "urgency_anchor_at = current_timestamp - (days_ago * 86400000 ms)"
-      last_completed_at_behavior: "Set to urgency_anchor_at if days_ago > 0, otherwise null on new tasks."
-      use_case: "Seeding existing habits or backdated completions without waiting for wall-clock time to elapse."
-
-  # ----------------------------------------------------------------------------
-  # RIDER SUBTASKS
-  # Real-world meaning: Attached sub-elements tied to parent task completions.
-  # ----------------------------------------------------------------------------
-  rider_subtasks:
-    types:
-      once_off:
-        description: "Single-instance detail attached specifically to the NEXT completion of a parent task."
-        example: "Bring book to loan someone next time you visit them."
-        lifecycle: "Automatically archived or detached upon parent task execution."
-
-      recurring_rotation:
-        description: "Subtask pool tied to a parent task, executed dynamically rather than in strict circular order."
-        example: "Parent: 'Vacuum', Subtasks: ['Living Room', 'Office', 'Study']."
-        rotation_mechanics:
-          selection_rule: "Max elapsed time since last subtask completion (delta_t_subtask MAX)."
-          behavior: "The top-ranked subtask is always whichever item hasn't been completed in the longest duration."
-          multi_completion_support: "Allows completing one, multiple, or all subtasks in a single execution event without disrupting the relative staleness order of remaining subtasks."
+        description: "Task transitions to terminal completed state permanently."
 
 significance_tiers:
   # ----------------------------------------------------------------------------
   # SIGNIFICANCE (S) - DRIVES LEADERBOARD RANKING ONLY
   # Real-world meaning: Consequence/stakes of ignoring a task.
-  # Mathematical bound: Bound directly to exponential factor b so a Tier 4 task
+  # Mathematical bound: Bound typically to exponential factor b so a Tier 4 task
   # at epoch (x=1) equals a Tier 1 task that is exactly 1 interval overdue (x=2).
   # ----------------------------------------------------------------------------
   step_conversion_rule: "S_4 = S_1 * e^b = 1.0 * 4.0 = 4.0"
@@ -206,14 +141,60 @@ todo_states:
       on_return_to_active: "If un-completed or reactivated manually, reset urgency anchor to current timestamp (delta_t = 0)."
 
 # ==============================================================================
-# WINDOWS OF VIABILITY (TEMPORAL AVAILABILITY CONSTRAINTS)
+# DEFERMENT MECHANICS (TEMPORARY SIGNIFICANCE DEBUFF & REBOUND)
+# ==============================================================================
+
+deferment_mechanics:
+  description: "Allows temporary deprioritization of a task by debuffing significance S while tracking lifetime deferment count."
+  tracking:
+    deferment_count:
+      type: "integer"
+      default: 0
+      description: "Lifetime tally of times this task was deferred. Incremented upon each deferral action."
+      ui_visibility: "Displayed prominently on task cards and main dashboard as a procrastination indicator."
+      persistence: "Retained permanently across completions; completing a task does NOT reset deferment_count."
+
+  activation_rule:
+    action: "User clicks Defer."
+    state_changes:
+      - "Increment deferment_count by 1 (k = deferment_count)."
+      - "Record deferment initiation timestamp t_defer."
+      - "Calculate initial debuffed significance: S_effective(0) = 0.10 * S_base."
+
+  dynamic_significance_curve:
+    variables:
+      delta_t_defer: "Elapsed time since deferment was triggered (t - t_defer)."
+      T: "Task urgency interval."
+      k: "Current deferment_count value."
+      M_k: "Max rebound multiplier formula: M(k) = 1.0 + 0.10 * k (e.g., k=2 -> 1.2x, k=5 -> 1.5x)."
+
+    phases:
+      phase_1_recovery:
+        condition: "0 <= delta_t_defer <= 0.5 * T"
+        formula: "S_effective = S_base * [ 0.10 + 1.80 * (delta_t_defer / T) ]"
+        behavior: "Significance starts at 10% of S_base and recovers linearly back to 100% of S_base over half the task interval."
+
+      phase_2_rebound_overshoot:
+        condition: "0.5 * T < delta_t_defer <= 1.0 * T"
+        formula: "S_effective = S_base * [ 1.0 + 0.20 * k * ((delta_t_defer / T) - 0.5) ]"
+        behavior: "Significance continues rising linearly past S_base, overshooting up to max rebound multiplier M(k) * S_base."
+
+      phase_3_terminal_penalty:
+        condition: "delta_t_defer > 1.0 * T"
+        formula: "S_effective = S_base * M(k)"
+        behavior: "Significance remains pegged at penalty peak until task is completed or deferred again."
+
+  completion_interaction:
+    behavior: "Completing a task resets S_effective back to standard tier S_base, but deferment_count remains at k."
+
+# ==============================================================================
+# WINDOWS OF VIABILITY
 # ==============================================================================
 
 viability_windows:
   description: "Restricts task visibility and actionable calculations based on temporal schedules."
   evaluation_rule: "Tasks evaluated outside their viability window dynamically inherit 'hidden' state mechanics."
-  urgency_clock_interaction: " Urgency clock continues advancing during non-viable periods (matches 'hidden' state physics) so urgency accurately reflects full elapsed time when the task becomes viable."
-
+  urgency_clock_interaction: "Urgency clock continues advancing during non-viable periods."
   supported_window_types:
     day_of_week:
       example: ["saturday", "sunday"]
@@ -290,37 +271,54 @@ domains_and_capacity:
           mechanics: "When a context crosses the Burnout & Overwhelm Threshold due to heavy overdue backlog (x > 1.0), Allostatic Load causes involuntary cognitive spillover. This dynamically reduces the effective capacity ceiling (L_effective) of adjacent contexts (e.g., Work overwhelm automatically shrinks available daily capacity for Home and Study)."
 
   system_ceiling:
-    total_baseline_au: 12.0 # Sum of 5.0 + 4.0 + 3.0
+    total_baseline_au: 12.0
     ui_heatmap_zones:
       green: "0.0 to 8.4 AU (0% - 70%): Sustainable, leaves 30% buffer for surprises."
       yellow: "8.4 to 12.0 AU (70% - 100%): Nominal capacity limit."
       red: "> 12.0 AU (> 100% OR Overdue Debt > 25%): Burnout / Overload Zone. Exceeds Allostatic Threshold and triggers Context Bleedthrough penalties."
 
 # ==============================================================================
-# FLUID CAPACITY & CRISIS MANAGEMENT (GLOBAL ENERGY DIAL)
+# VACATIONS & DYNAMIC CAPACITY MANAGEMENT
 # ==============================================================================
 
-dynamic_energy_dial:
-  # ----------------------------------------------------------------------------
-  # Real-world meaning: Allows human bandwidth adjustment during illness/burnout.
-  # ----------------------------------------------------------------------------
-  energy_factor_range: "0.10 to 1.00" # User slider in UI (10% to 100%)
+vacations_and_capacity:
+  description: "Replaces raw capacity throttling with intentional or suggested Vacation profiles that modify task behaviors during reduced availability windows."
 
-  effective_capacity_formula: "L_effective = energy_factor * total_baseline_au"
-  overload_gap_formula: "L_overload = max(0, L_active - L_effective)"
+  creation_triggers:
+    manual_creation:
+      description: "Users can create unconstrained, concurrent, or future scheduled Vacations at any time."
+    capacity_reduction_trigger:
+      description: "Lowering global/domain capacity sliders automatically generates a suggested Vacation profile."
+      suggested_profile_action: "Populates a draft Vacation with pre-selected task modifications to fit reduced capacity, which the user can accept, edit, or decline."
 
-  auto_freeze_mechanics:
-    state_behavior: "Frozen todos are excluded from calculations and the leaderboard, and their urgency clock stops advancing. Hidden todos continue aging; paused todos restart their urgency clock when reactivated."
-    unfreeze_behavior: "Reactivating a frozen todo resumes from the same elapsed interval position, excluding time spent frozen."
-    trim_to_fit_triage:
-      step_1: "Sort active tasks by Significance (S) ASC, Interval (T) DESC."
-      step_2: "Auto-select lowest-stakes active tasks to transition to frozen until L_active <= L_effective."
-      step_3: "Protect Tier 4 and explicitly tagged 'Self-Care/Survival' tasks from auto-freezing."
+  vacation_lifecycle:
+    attributes:
+      start_time: "Timestamp/Date when vacation modifications take effect."
+      end_time: "Optional Timestamp/Date. If omitted, vacation remains active indefinitely until manually ended."
+      is_active: "Boolean flag evaluating whether current time falls within [start_time, end_time]."
+    termination:
+      manual_early_termination: "User can terminate any vacation prior to its scheduled end_time at any time, immediately reverting all task modifications."
 
-  actionability_score:
-    # Used during low-energy states to highlight 'Quick Wins'
-    formula: "ROI = W(x) / E"
-    description: "Ranks tasks by Urgency Weight returned per unit of Effort expended."
+  task_modification_rules:
+    description: "Each Vacation holds a manifest of task-specific overrides applied while the vacation is active."
+    allowed_modifications:
+      state_override:
+        type: "enum"
+        options: [frozen, hidden, paused]
+        description: "Temporarily alters task state (e.g., auto-freeze heavy chores)."
+      significance_multiplier:
+        type: "float"
+        default: 1.0
+        description: "Scales effective significance during vacation (e.g., 0.5 * S_base for work tasks)."
+      effort_override:
+        type: "float"
+        description: "Temporarily adjusts effort rating during vacation."
+
+  triage_recommendation_engine:
+    description: "Used by suggested vacations to bring total active capacity within target limit."
+    step_1: "Sort active tasks by Significance (S) ASC, Interval (T) DESC."
+    step_2: "Auto-select lowest-stakes tasks for state override (frozen/hidden) until L_active <= L_vacation_target."
+    step_3: "Protect Tier 4 and explicitly tagged 'Self-Care/Survival' tasks from modification."
 
 # ==============================================================================
 # ROUTING & LEADERBOARD POOLING
@@ -334,5 +332,5 @@ leaderboard_routing:
 
   proactive_radar_bucket:
     condition: "x <= 1.0"
-    sorting: "W(x) / S DESC"
+    sorting: "W(x) / S_effective DESC"
     description: "Surfaces tasks approaching peak epoch that offer maximum proactive load reduction."
