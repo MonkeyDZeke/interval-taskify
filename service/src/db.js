@@ -34,6 +34,39 @@ db.exec(`
   );
 `);
 
+// Ordered, additive migrations tracked via PRAGMA user_version. Each runs once;
+// the column checks keep them safe against databases that were altered manually.
+const MIGRATIONS = [
+  function addIsRecurring() {
+    const cols = db.prepare("PRAGMA table_info(todos)").all();
+    if (!cols.some(c => c.name === "is_recurring")) {
+      db.exec("ALTER TABLE todos ADD COLUMN is_recurring INTEGER NOT NULL DEFAULT 1");
+    }
+  }
+];
+
+function runMigrations() {
+  const current = db.prepare("PRAGMA user_version").get().user_version;
+  for (let v = current; v < MIGRATIONS.length; v++) {
+    db.exec("BEGIN");
+    try {
+      MIGRATIONS[v]();
+      db.exec(`PRAGMA user_version = ${v + 1}`);
+      db.exec("COMMIT");
+    } catch (err) {
+      db.exec("ROLLBACK");
+      throw err;
+    }
+  }
+}
+
+runMigrations();
+
+function toRecurringFlag(value, fallback = 1) {
+  if (value === undefined || value === null) return fallback;
+  return value === false || value === 0 || value === "0" || value === "false" ? 0 : 1;
+}
+
 function getAllTasks() {
   return db.prepare("SELECT * FROM todos ORDER BY id ASC").all();
 }
@@ -50,8 +83,8 @@ function createTask(data) {
   const nowIso = new Date(nowMs).toISOString();
 
   const stmt = db.prepare(`
-    INSERT INTO todos (title, created_at, last_completed_at, urgency_anchor_at, interval_days, significance, effort, domain, state)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'active')
+    INSERT INTO todos (title, created_at, last_completed_at, urgency_anchor_at, interval_days, significance,     effort, domain, state, is_recurring)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'active', ?)
   `);
 
   const info = stmt.run(
@@ -62,7 +95,8 @@ function createTask(data) {
     Number(data.interval_days) || 7,
     Number(data.significance) || 1.0,
     Number(data.effort) || 1.0,
-    data.domain || "executive_mental"
+    data.domain || "executive_mental",
+    toRecurringFlag(data.is_recurring)
   );
 
   return getTaskById(Number(info.lastInsertRowid));
@@ -85,7 +119,7 @@ function updateTask(id, data) {
 
   const stmt = db.prepare(`
     UPDATE todos
-    SET title = ?, interval_days = ?, significance = ?, effort = ?, domain = ?, urgency_anchor_at = ?, last_completed_at = ?
+    SET title = ?, interval_days = ?, significance = ?, effort = ?, domain = ?,     urgency_anchor_at = ?, last_completed_at = ?, is_recurring = ?
     WHERE id = ?
   `);
 
@@ -97,6 +131,7 @@ function updateTask(id, data) {
     data.domain !== undefined ? data.domain : existing.domain,
     anchorIso,
     lastCompletedIso,
+    toRecurringFlag(data.is_recurring, existing.is_recurring),
     id
   );
 
@@ -110,14 +145,19 @@ function completeTask(id) {
   const nowIso = new Date().toISOString();
 
   const insertComp = db.prepare("INSERT INTO completions (todo_id, completed_at) VALUES (?, ?)");
-  const updateTodo = db.prepare(`
-    UPDATE todos SET last_completed_at = ?, urgency_anchor_at = ?, frozen_at = NULL WHERE id = ?
-  `);
+  // Once-off tasks keep their anchor (clock halts) and move to the terminal state.
+  const updateTodo = task.is_recurring === 0
+    ? db.prepare("UPDATE todos SET last_completed_at = ?, state = 'completed', frozen_at = NULL WHERE id = ?")
+    : db.prepare("UPDATE todos SET last_completed_at = ?, urgency_anchor_at = ?, frozen_at = NULL WHERE id = ?");
 
   db.exec("BEGIN");
   try {
     insertComp.run(id, nowIso);
-    updateTodo.run(nowIso, nowIso, id);
+    if (task.is_recurring === 0) {
+      updateTodo.run(nowIso, id);
+    } else {
+      updateTodo.run(nowIso, nowIso, id);
+    }
     db.exec("COMMIT");
   } catch (err) {
     db.exec("ROLLBACK");
@@ -145,7 +185,7 @@ function setTaskState(id, newState) {
     frozenAt = null;
   }
 
-  if (task.state === "paused" && newState !== "paused") {
+  if ((task.state === "paused" || task.state === "completed") && newState !== task.state) {
     urgencyAnchor = nowIso;
   }
 
@@ -171,7 +211,7 @@ function exportData() {
   const todos = getAllTasks();
   const completions = db.prepare("SELECT * FROM completions ORDER BY completed_at ASC").all();
   return {
-    version: "1.0",
+    version: "1.1",
     exported_at: new Date().toISOString(),
     todos,
     completions
@@ -185,8 +225,8 @@ function importData(payload) {
   const clearCompletions = db.prepare("DELETE FROM completions");
 
   const insertTodo = db.prepare(`
-    INSERT INTO todos (id, title, created_at, last_completed_at, urgency_anchor_at, interval_days, significance, effort, domain, state, frozen_at)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    INSERT INTO todos (id, title, created_at, last_completed_at, urgency_anchor_at,     interval_days, significance, effort, domain, state, frozen_at, is_recurring)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
   `);
 
   const insertCompletion = db.prepare(`
@@ -210,7 +250,8 @@ function importData(payload) {
         t.effort,
         t.domain,
         t.state || 'active',
-        t.frozen_at || null
+        t.frozen_at || null,
+        toRecurringFlag(t.is_recurring)
       );
     }
 

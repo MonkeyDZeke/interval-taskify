@@ -12,7 +12,8 @@ router.get("/tasks", (req, res) => {
   // Filter
   tasks = tasks.filter(task => {
     if (filter === "active" && task.state !== "active") return false;
-    if (filter === "inactive" && task.state === "active") return false;
+    if (filter === "inactive" && (task.state === "active" || task.state === "completed")) return false;
+    if (filter === "completed" && task.state !== "completed") return false;
     if (domain && task.domain !== domain) return false;
     return true;
   });
