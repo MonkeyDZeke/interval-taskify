@@ -87,10 +87,12 @@ function createTask(data) {
         VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'active', ?)
   `);
 
+  const isRecurring = toRecurringFlag(data.is_recurring);
+
   const info = stmt.run(
     data.title,
     nowIso,
-    daysAgo > 0 ? anchorIso : null,
+    isRecurring && daysAgo > 0 ? anchorIso : null,
     anchorIso,
     Number(data.interval_days) || 7,
     Number(data.significance) || 1.0,

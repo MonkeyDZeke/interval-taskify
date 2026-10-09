@@ -374,10 +374,13 @@ PlasmoidItem {
                         QQC2.ToolTip.visible: hovered
                     }
 
-                    QQC2.Label { text: "days | Done" }
+                    QQC2.Label {
+                        text: onceInput.checked ? "days" : "days | Done"
+                    }
 
                     QQC2.SpinBox {
                         id: daysAgoInput
+                        visible: !onceInput.checked
                         from: 0
                         to: 3650
                         value: 0
@@ -387,7 +390,10 @@ PlasmoidItem {
                         QQC2.ToolTip.visible: hovered
                     }
 
-                    QQC2.Label { text: "days ago" }
+                    QQC2.Label {
+                        text: "days ago"
+                        visible: !onceInput.checked
+                    }
 
                     QQC2.ComboBox {
                         id: significanceInput
