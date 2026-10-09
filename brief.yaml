@@ -69,6 +69,9 @@ recurrence_and_lifecycle:
         action: "Mark completion timestamp and halt urgency clock. Maintain deferment_count intact."
         target_state: "completed"
         description: "Task transitions to terminal completed state permanently."
+    capacity_handler:
+      recurring_true: "Daily load C_i = E_i / T_i (constant)."
+      recurring_false: "Daily load ramps with proximity to due date per domains_and_capacity.once_off_cost_formula, peaking at E_i (daily-task equivalent) when due or overdue."
 
 significance_tiers:
   # ----------------------------------------------------------------------------
@@ -221,6 +224,28 @@ domains_and_capacity:
   # Formula for Daily Maintenance Cost: C_i = E_i / T_i
   # ----------------------------------------------------------------------------
   cost_formula: "C_i = E_i / T_i"
+
+  # ----------------------------------------------------------------------------
+  # ONCE-OFF TASK LOAD (is_recurring: false)
+  # Real-world meaning: A once-off task has no steady maintenance cost; its load
+  # ramps up as the due date nears, spreading the work across the remaining days,
+  # then holds at its peak once overdue. Peak load equals that of a daily (T = 1)
+  # recurring task: an overdue once-off task weighs on capacity exactly as much per
+  # day as a daily task of the same effort that is completed every day (E_i AU/day),
+  # independent of its own interval T.
+  # Proxy: reuses the existing logarithmic urgency ratio W(x) / S_effective, so no
+  # new curve or constants are introduced.
+  # ----------------------------------------------------------------------------
+  once_off_cost_formula:
+    applies_to: "Active tasks with is_recurring: false. Recurring tasks keep C_i = E_i / T_i."
+    equation: "C_i(x) = E_i * R(x)"
+    baseline_load: "E_i AU/day, i.e. E_i / T with T fixed at 1.0 day (the daily-task equivalent). T_i of the once-off task only scales the ramp via x = delta_t / T_i; it does not scale the peak."
+    ramp_factor:
+      R_x: "R(x) = ln(1 + a * x) / ln(1 + a) for 0 <= x <= 1; R(x) = 1.0 for x > 1"
+      relation_to_urgency: "R(x) = W(x) / S_effective while x <= 1. Unlike W(x), R is clamped at 1.0 past the due date instead of growing exponentially."
+      behavior: "Starts at 0 when the task is created or activated (x = 0), rises quickly early (~0.75 at x = 0.5), and reaches the daily-equivalent peak load E_i at the due date."
+      overdue_behavior: "Load persists at 100% of E_i (R = 1.0, same as a daily task) until the task is completed. Overdue debt is still tracked separately via x > 1.0."
+      terminal_behavior: "Completed once-off tasks contribute 0 load (see todo_states.completed)."
 
   channels:
     executive_mental:

@@ -142,8 +142,9 @@ PlasmoidItem {
 
     function getStatusText(todo) {
         if (todo.state !== "active") return todo.state.toUpperCase()
+        var onceTag = todo.is_recurring === 0 ? "  •  Once-off" : ""
         if (todo.metrics && todo.metrics.statusText) {
-            return todo.metrics.statusText + "  •  W " + todo.metrics.weight.toFixed(2)
+            return todo.metrics.statusText + "  •  W " + todo.metrics.weight.toFixed(2) + onceTag
         }
 
         var metrics = getMetrics(todo)
@@ -160,20 +161,21 @@ PlasmoidItem {
             status = "Overdue " + overdueDays + (overdueDays === 1 ? " day" : " days")
         }
 
-        return status + "  •  W " + metrics.weight.toFixed(2)
+        return status + "  •  W " + metrics.weight.toFixed(2) + onceTag
+    }
+
+    function matchesFilter(todo, filter) {
+        if (filter === "all") return true
+        if (filter === "active") return todo.state === "active"
+        if (filter === "completed") return todo.state === "completed"
+        if (filter === "inactive") return todo.state !== "active" && todo.state !== "completed"
+        return false
     }
 
     function getFilteredTodos() {
         var filtered = []
         for (var i = 0; i < todos.length; i++) {
-            var todo = todos[i]
-            if (currentFilter === "all") {
-                filtered.push(todo)
-            } else if (currentFilter === "active" && todo.state === "active") {
-                filtered.push(todo)
-            } else if (currentFilter === "inactive" && todo.state !== "active") {
-                filtered.push(todo)
-            }
+            if (matchesFilter(todos[i], currentFilter)) filtered.push(todos[i])
         }
         filtered.sort(function(left, right) {
             var leftActive = left.state === "active"
@@ -188,13 +190,7 @@ PlasmoidItem {
     function getTodoCount(filter) {
         var count = 0
         for (var i = 0; i < todos.length; i++) {
-            if (filter === "all") {
-                count++
-            } else if (filter === "active" && todos[i].state === "active") {
-                count++
-            } else if (filter === "inactive" && todos[i].state !== "active") {
-                count++
-            }
+            if (matchesFilter(todos[i], filter)) count++
         }
         return count
     }
@@ -220,7 +216,9 @@ PlasmoidItem {
             if (todo.state !== "active") continue
             var metrics = getMetrics(todo)
             totalWeight += metrics.weight
-            var cost = Number(todo.effort) / Number(todo.interval_days)
+            var cost = todo.is_recurring === 0
+                    ? Number(todo.effort) * Math.log(1 + 10 * Math.min(metrics.x, 1)) / Math.log(11)
+                    : Number(todo.effort) / Number(todo.interval_days)
             if (isFinite(cost)) {
                 load[todo.domain] = (load[todo.domain] || 0) + cost
                 totalCost += cost
@@ -251,6 +249,7 @@ PlasmoidItem {
                 if (root.editingTodo) {
                     inputField.text = root.editingTodo.title
                     intervalInput.value = Number(root.editingTodo.interval_days) || 7
+                    onceInput.checked = root.editingTodo.is_recurring === 0
                     daysAgoInput.value = Math.round(root.getMetrics(root.editingTodo).elapsedDays)
                     significanceInput.currentIndex = Math.max(0, significanceInput.indexOfValue(Number(root.editingTodo.significance)))
                     effortInput.currentIndex = Math.max(0, effortInput.indexOfValue(Number(root.editingTodo.effort)))
@@ -258,7 +257,7 @@ PlasmoidItem {
                 } else {
                     inputField.text = ""
                     intervalInput.value = 7
-                    daysAgoInput.value = 0
+                    onceInput.checked = false
                     significanceInput.currentIndex = 0
                     effortInput.currentIndex = 1
                     domainInput.currentIndex = 0
@@ -296,7 +295,8 @@ PlasmoidItem {
                                 days_ago: daysAgoInput.value,
                                 significance: significanceInput.currentValue,
                                 effort: effortInput.currentValue,
-                                domain: domainInput.currentValue
+                                domain: domainInput.currentValue,
+                                is_recurring: !onceInput.checked
                             }
                             if (root.editingTodo) {
                                 root.saveEditingTodo(text, config)
@@ -321,7 +321,8 @@ PlasmoidItem {
                                 days_ago: daysAgoInput.value,
                                 significance: significanceInput.currentValue,
                                 effort: effortInput.currentValue,
-                                domain: domainInput.currentValue
+                                domain: domainInput.currentValue,
+                                is_recurring: !onceInput.checked
                             })
                             inputField.text = ""
                         }
@@ -341,7 +342,8 @@ PlasmoidItem {
                                 days_ago: daysAgoInput.value,
                                 significance: significanceInput.currentValue,
                                 effort: effortInput.currentValue,
-                                domain: domainInput.currentValue
+                                domain: domainInput.currentValue,
+                                is_recurring: !onceInput.checked
                             })
                         }
                     }
@@ -359,7 +361,7 @@ PlasmoidItem {
                     Layout.fillWidth: true
                     spacing: Kirigami.Units.smallSpacing
 
-                    QQC2.Label { text: "Every" }
+                    QQC2.Label { text: onceInput.checked ? "Due in" : "Every" }
 
                     QQC2.SpinBox {
                         id: intervalInput
@@ -372,10 +374,13 @@ PlasmoidItem {
                         QQC2.ToolTip.visible: hovered
                     }
 
-                    QQC2.Label { text: "days | Done" }
+                    QQC2.Label {
+                        text: onceInput.checked ? "days" : "days | Done"
+                    }
 
                     QQC2.SpinBox {
                         id: daysAgoInput
+                        visible: !onceInput.checked
                         from: 0
                         to: 3650
                         value: 0
@@ -385,7 +390,10 @@ PlasmoidItem {
                         QQC2.ToolTip.visible: hovered
                     }
 
-                    QQC2.Label { text: "days ago" }
+                    QQC2.Label {
+                        text: "days ago"
+                        visible: !onceInput.checked
+                    }
 
                     QQC2.ComboBox {
                         id: significanceInput
@@ -427,6 +435,14 @@ PlasmoidItem {
                         model: root.domainOptions
                         textRole: "text"
                         valueRole: "value"
+                    }
+
+                    QQC2.CheckBox {
+                        id: onceInput
+                        text: "Once-off"
+                        checked: false
+                        QQC2.ToolTip.text: "Task completes permanently instead of recurring"
+                        QQC2.ToolTip.visible: hovered
                     }
 
                     QQC2.Button {
@@ -476,6 +492,14 @@ PlasmoidItem {
                         checked: root.currentFilter === "inactive"
                         flat: !checked
                         onClicked: root.currentFilter = "inactive"
+                    }
+
+                    QQC2.Button {
+                        text: "Done " + root.getTodoCount("completed")
+                        checkable: true
+                        checked: root.currentFilter === "completed"
+                        flat: !checked
+                        onClicked: root.currentFilter = "completed"
                     }
 
                     Item { Layout.fillWidth: true }
@@ -573,7 +597,7 @@ PlasmoidItem {
 
                             QQC2.ToolTip.text: {
                                 var metrics = root.getMetrics(itemData)
-                                return "Interval (T): " + itemData.interval_days + " days\n" +
+                                return (itemData.is_recurring === 0 ? "Once-off, due in (T): " : "Interval (T): ") + itemData.interval_days + " days\n" +
                                        "Elapsed (Δt): " + metrics.elapsedDays.toFixed(1) + " days\n" +
                                        "Interval Ratio (x): " + metrics.x.toFixed(2) + "x\n" +
                                        "Urgency Weight (W): " + metrics.weight.toFixed(2) + "\n" +
@@ -586,6 +610,7 @@ PlasmoidItem {
                 }
 
                 QQC2.ComboBox {
+                    visible: itemData.state !== "completed"
                     Layout.alignment: Qt.AlignVCenter
                     Layout.preferredWidth: Kirigami.Units.gridUnit * 7
                     model: root.stateOptions
@@ -593,6 +618,14 @@ PlasmoidItem {
                     valueRole: "value"
                     currentIndex: indexOfValue(itemData.state)
                     onActivated: root.setTodoState(itemData.id, currentValue)
+                }
+
+                PlasmaComponents.ToolButton {
+                    visible: itemData.state === "completed"
+                    icon.name: "edit-undo"
+                    onClicked: root.setTodoState(itemData.id, "active")
+                    QQC2.ToolTip.text: "Reopen task (restarts urgency clock)"
+                    QQC2.ToolTip.visible: hovered
                 }
 
                 PlasmaComponents.ToolButton {

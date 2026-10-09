@@ -81,7 +81,7 @@ async function cmdTop(limitArg) {
     const color = m.x > 1.0 ? colors.red : (m.x >= 0.8 ? colors.yellow : colors.green);
     console.log(`  ${colors.bold}${i + 1}. [ID: ${t.id}] ${t.title}${colors.reset}`);
     console.log(`     Status: ${color}${m.statusText}${colors.reset}  |  Weight: ${colors.bold}${m.weight.toFixed(2)}${colors.reset} W  |  Ratio: ${m.x.toFixed(2)}x`);
-    console.log(`     Domain: ${t.domain}  |  Interval: ${t.interval_days}d\n`);
+    console.log(`     Domain: ${t.domain}  |  ${t.is_recurring === 0 ? "Once-off, due in" : "Interval:"} ${t.interval_days}d\n`);
   });
 }
 
@@ -105,7 +105,7 @@ async function cmdList(filter = "active") {
     const titleStr = t.title.padEnd(30, " ").slice(0, 30);
     const statusStr = (m.statusText || t.state).padEnd(17, " ").slice(0, 17);
     const weightStr = m.weight.toFixed(2).padStart(6, " ");
-    const intervalStr = `${t.interval_days}d`;
+    const intervalStr = `${t.interval_days}d${t.is_recurring === 0 ? " once" : ""}`;
 
     console.log(`  ${colors.bold}${idStr}${colors.reset}  ${titleStr}   ${color}${statusStr}${colors.reset}  ${weightStr} W   ${intervalStr}`);
   });
@@ -120,14 +120,18 @@ async function cmdComplete(id) {
   }
   const data = await api(`/tasks/${id}/complete`, { method: "POST" });
   console.log(`\n${colors.green}✔ Completed task #${data.task.id}:${colors.reset} "${data.task.title}"`);
-  console.log(`  Urgency reset to 0.00 W. Next due in ${data.task.interval_days} days.\n`);
+  if (data.task.state === "completed") {
+    console.log(`  Once-off task finished; urgency clock stopped.\n`);
+  } else {
+    console.log(`  Urgency reset to 0.00 W. Next due in ${data.task.interval_days} days.\n`);
+  }
 }
 
 // Command: Add Task
 async function cmdAdd(args) {
   const titleIndex = args.findIndex(a => !a.startsWith("-"));
   if (titleIndex === -1) {
-    console.log(`${colors.red}Usage: taskify add "Task Title" [-i interval] [-s significance] [-e effort] [-d domain] [-a days_ago]${colors.reset}`);
+    console.log(`${colors.red}Usage: taskify add "Task Title" [--once] [-i interval] [-s significance] [-e effort] [-d domain] [-a days_ago]${colors.reset}`);
     return;
   }
 
@@ -137,6 +141,7 @@ async function cmdAdd(args) {
   let effort = 1.0;
   let domain = "executive_mental";
   let daysAgo = 0;
+  const isRecurring = !args.includes("--once");
 
   for (let i = 0; i < args.length; i++) {
     if (args[i] === "-i" && args[i + 1]) interval = parseFloat(args[i + 1]);
@@ -154,12 +159,13 @@ async function cmdAdd(args) {
       significance,
       effort,
       domain,
-      days_ago: daysAgo
+      days_ago: daysAgo,
+      is_recurring: isRecurring
     })
   });
 
-  console.log(`\n${colors.green}✔ Created task #${data.task.id}:${colors.reset} "${data.task.title}"`);
-  console.log(`  Interval: ${data.task.interval_days}d | Weight: ${data.task.metrics.weight.toFixed(2)} W\n`);
+  console.log(`\n${colors.green}✔ Created ${isRecurring ? "" : "once-off "}task #${data.task.id}:${colors.reset} "${data.task.title}"`);
+  console.log(`  ${isRecurring ? "Interval" : "Due in"}: ${data.task.interval_days}d | Weight: ${data.task.metrics.weight.toFixed(2)} W\n`);
 }
 
 // Command: Summary / Bandwidth
@@ -187,10 +193,11 @@ ${colors.bold}USAGE:${colors.reset}
 
 ${colors.bold}COMMANDS:${colors.reset}
   top [N]               Show today's top N priorities (default: 3)
-  ls [--all|--inactive] List all tasks sorted by urgency
+  ls [--all|--inactive|--completed] List all tasks sorted by urgency
   done <id>             Mark a task complete by ID
-  add "Title" [opts]    Add a new recurring task
-                        Opts: -i <days> (interval)
+  add "Title" [opts]    Add a new task (recurring unless --once)
+                        Opts: --once (once-off; -i is days until due)
+                              -i <days> (interval)
                               -s <1.0|1.6|2.5|4.0> (significance)
                               -e <0.5|1.0|2.5> (effort)
                               -d <executive_mental|physical_somatic|social_relational>
@@ -214,7 +221,7 @@ switch (cmd) {
     break;
   case "ls":
   case "list":
-    cmdList(args.includes("--all") ? "all" : (args.includes("--inactive") ? "inactive" : "active"));
+    cmdList(args.includes("--all") ? "all" : (args.includes("--inactive") ? "inactive" : (args.includes("--completed") ? "completed" : "active")));
     break;
   case "done":
   case "complete":

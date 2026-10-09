@@ -55,7 +55,8 @@ function addTask(title, config, callback) {
     days_ago: config.days_ago || 0,
     significance: config.significance || 1.0,
     effort: config.effort || 1.0,
-    domain: config.domain || "executive_mental"
+    domain: config.domain || "executive_mental",
+    is_recurring: config.is_recurring !== false
   }
   request("POST", "/tasks", payload, callback)
 }
@@ -67,7 +68,8 @@ function updateTask(id, title, config, callback) {
     days_ago: config.days_ago,
     significance: config.significance,
     effort: config.effort,
-    domain: config.domain
+    domain: config.domain,
+    is_recurring: config.is_recurring
   }
   request("PUT", "/tasks/" + id, payload, callback)
 }

@@ -20,20 +20,25 @@ function getMetrics(task, nowMs = Date.now()) {
     return { elapsedDays: 0, x: 0, weight: 0, dailyCostAu: 0, actionability: 0, statusText: "Invalid" };
   }
 
-  // Handle frozen state: time freeze anchors at frozen_at timestamp
+  // Frozen and completed tasks hold their clock at the moment the state began
   const effectiveNowMs = (task.state === "frozen" && task.frozen_at)
     ? Date.parse(task.frozen_at)
-    : nowMs;
+    : (task.state === "completed" && task.last_completed_at)
+      ? Date.parse(task.last_completed_at)
+      : nowMs;
 
   const elapsedDays = Math.max(0, (effectiveNowMs - anchorMs) / 86400000);
   const x = elapsedDays / intervalDays;
 
   // W(x): Logarithmic phase (x <= 1) vs. Exponential phase (x > 1)
+  const ramp = Math.log(1.0 + A * Math.min(x, 1.0)) / Math.log(1.0 + A);
   const weight = x <= 1.0
-    ? significance * (Math.log(1.0 + A * x) / Math.log(1.0 + A))
+    ? significance * ramp
     : significance * Math.exp(B * (x - 1.0));
 
-  const dailyCostAu = effort / intervalDays;
+  // Recurring: steady E/T. Once-off: ramps toward the daily-equivalent peak E, held when overdue.
+  const isOnceOff = Number(task.is_recurring) === 0;
+  const dailyCostAu = isOnceOff ? effort * ramp : effort / intervalDays;
   const actionability = effort > 0 ? weight / effort : weight;
 
   // Human-readable status string
