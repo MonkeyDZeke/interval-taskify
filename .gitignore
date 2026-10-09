@@ -41,6 +41,7 @@ __pycache__/
 *.py[cod]
 venv/
 .env
+clients/web-app/env.js
 
 # Qt Creator
 *.user

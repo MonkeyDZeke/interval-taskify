@@ -1,0 +1,68 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Interval Taskify</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <main id="app">
+    <header class="header">
+      <div class="row">
+        <input id="title" type="text" placeholder="Add a task..." autocomplete="off">
+        <button id="add-btn" class="primary">Add</button>
+        <button id="update-btn" class="primary" hidden>Update</button>
+        <button id="cancel-btn" hidden>Cancel</button>
+      </div>
+
+      <div class="row">
+        <label id="interval-label" for="interval">Every</label>
+        <input id="interval" type="number" min="1" max="3650" value="7" title="Task interval in days">
+        <span id="days-label">days | Done</span>
+        <input id="days-ago" type="number" min="0" max="3650" value="0" title="Days since task was last completed">
+        <span id="days-ago-label">days ago</span>
+        <select id="significance" class="grow" title="Significance">
+          <option value="1.0">Low</option>
+          <option value="1.6">Medium</option>
+          <option value="2.5">High</option>
+          <option value="4.0">Critical</option>
+        </select>
+        <select id="effort" title="Effort">
+          <option value="0.5">Quick</option>
+          <option value="1.0" selected>Standard</option>
+          <option value="2.5">Heavy</option>
+        </select>
+      </div>
+
+      <div class="row">
+        <select id="domain" class="grow">
+          <option value="executive_mental">Mental / Executive</option>
+          <option value="physical_somatic">Physical / Somatic</option>
+          <option value="social_relational">Social / Relational</option>
+        </select>
+        <label class="check" title="Task completes permanently instead of recurring">
+          <input id="once" type="checkbox"> Once-off
+        </label>
+        <button id="export-btn" title="Copy full JSON data backup from service">Export</button>
+      </div>
+
+      <div class="row filters">
+        <button data-filter="all"></button>
+        <button data-filter="active"></button>
+        <button data-filter="inactive"></button>
+        <button data-filter="completed"></button>
+        <span class="spacer"></span>
+        <span id="status" class="small offline">● Offline (Cached)</span>
+      </div>
+    </header>
+
+    <div id="summary" class="summary small"></div>
+
+    <ul id="list" class="list"></ul>
+  </main>
+
+  <script src="env.js"></script>
+  <script src="app.js"></script>
+</body>
+</html>
