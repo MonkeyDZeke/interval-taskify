@@ -1,0 +1,107 @@
+:root {
+  --bg: #232629;
+  --header: #31363b;
+  --text: #eff0f1;
+  --muted: #7f8c8d;
+  --pos: #27ae60;
+  --neg: #da4453;
+  --accent: #3daee9;
+  --border: #4d4d4d;
+  --field: #1b1e20;
+}
+
+* { box-sizing: border-box; }
+
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--text);
+  font: 14px/1.4 system-ui, sans-serif;
+  display: flex;
+  justify-content: center;
+}
+
+#app {
+  width: 100%;
+  max-width: 560px;
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+}
+
+.header {
+  background: var(--header);
+  padding: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  border-bottom: 1px solid var(--border);
+}
+
+.row { display: flex; align-items: center; gap: 6px; }
+[hidden] { display: none !important; }
+.grow, #title { flex: 1; min-width: 0; }
+.spacer { flex: 1; }
+
+input[type=text], input[type=number], select, button {
+  background: var(--field);
+  color: var(--text);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  padding: 6px 8px;
+  font: inherit;
+}
+
+#title { height: 40px; padding: 0 12px; }
+#add-btn, #update-btn, #cancel-btn { height: 40px; padding: 0 16px; }
+input[type=number] { width: 72px; }
+
+button { cursor: pointer; }
+button:hover { border-color: var(--accent); }
+button.primary {
+  background: var(--accent);
+  color: #111;
+  border-color: var(--accent);
+}
+.filters button { background: transparent; border-color: transparent; }
+.filters button.checked { background: var(--accent); color: #111; }
+
+.check { display: flex; align-items: center; gap: 4px; white-space: nowrap; }
+
+.small { font-size: 12px; }
+.muted { color: var(--muted); }
+.online { color: var(--pos); }
+.offline { color: var(--muted); }
+
+.summary {
+  padding: 8px 12px;
+  color: var(--muted);
+  border-bottom: 1px solid var(--border);
+  min-height: 40px;
+  display: flex;
+  align-items: center;
+}
+
+.list { list-style: none; margin: 0; padding: 0; flex: 1; overflow-y: auto; }
+
+.item {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  height: 80px;
+  padding: 0 12px;
+}
+.item:hover { background: rgba(255, 255, 255, 0.05); }
+.item .info { flex: 1; min-width: 0; }
+.item .name {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.item .name.active { font-weight: bold; }
+.item .name.inactive { color: var(--muted); }
+.item .status { cursor: help; }
+.item .status.overdue { color: var(--neg); }
+.item select { width: 112px; }
+.item button { background: transparent; border-color: transparent; font-size: 16px; padding: 4px 8px; }
+.item button:hover { border-color: var(--accent); }
