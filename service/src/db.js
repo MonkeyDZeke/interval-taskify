@@ -81,13 +81,12 @@ function createTask(data) {
   const anchorMs = nowMs - (daysAgo * 86400000);
   const anchorIso = new Date(anchorMs).toISOString();
   const nowIso = new Date(nowMs).toISOString();
+  const isRecurring = toRecurringFlag(data.is_recurring, 1, data);
 
   const stmt = db.prepare(`
-    INSERT INTO todos (title, created_at, last_completed_at, urgency_anchor_at, interval_days, significance,     effort, domain, state, is_recurring)
+    INSERT INTO todos (title, created_at, last_completed_at, urgency_anchor_at, interval_days, significance, effort, domain, state, is_recurring)
         VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'active', ?)
   `);
-
-  const isRecurring = toRecurringFlag(data.is_recurring);
 
   const info = stmt.run(
     data.title,
@@ -98,7 +97,7 @@ function createTask(data) {
     Number(data.significance) || 1.0,
     Number(data.effort) || 1.0,
     data.domain || "executive_mental",
-    toRecurringFlag(data.is_recurring)
+    isRecurring
   );
 
   return getTaskById(Number(info.lastInsertRowid));
@@ -121,7 +120,7 @@ function updateTask(id, data) {
 
   const stmt = db.prepare(`
     UPDATE todos
-    SET title = ?, interval_days = ?, significance = ?, effort = ?, domain = ?,     urgency_anchor_at = ?, last_completed_at = ?, is_recurring = ?
+    SET title = ?, interval_days = ?, significance = ?, effort = ?, domain = ?, urgency_anchor_at = ?, last_completed_at = ?, is_recurring = ?
     WHERE id = ?
   `);
 
@@ -145,17 +144,18 @@ function completeTask(id) {
   if (!task || task.state !== "active") return null;
 
   const nowIso = new Date().toISOString();
+  const isOnceOff = toRecurringFlag(task.is_recurring) === 0;
 
   const insertComp = db.prepare("INSERT INTO completions (todo_id, completed_at) VALUES (?, ?)");
   // Once-off tasks keep their anchor (clock halts) and move to the terminal state.
-  const updateTodo = task.is_recurring === 0
+  const updateTodo = isOnceOff
     ? db.prepare("UPDATE todos SET last_completed_at = ?, state = 'completed', frozen_at = NULL WHERE id = ?")
     : db.prepare("UPDATE todos SET last_completed_at = ?, urgency_anchor_at = ?, frozen_at = NULL WHERE id = ?");
 
   db.exec("BEGIN");
   try {
     insertComp.run(id, nowIso);
-    if (task.is_recurring === 0) {
+    if (isOnceOff) {
       updateTodo.run(nowIso, id);
     } else {
       updateTodo.run(nowIso, nowIso, id);
@@ -170,7 +170,7 @@ function completeTask(id) {
 }
 
 function setTaskState(id, newState) {
-  const validStates = ["active", "frozen", "hidden", "paused"];
+  const validStates = ["active", "frozen", "hidden", "paused", "completed"];
   if (!validStates.includes(newState)) return null;
 
   const task = getTaskById(id);
