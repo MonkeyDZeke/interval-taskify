@@ -638,7 +638,7 @@ PlasmoidItem {
 
                 PlasmaComponents.ToolButton {
                     visible: itemData.state === "active"
-                    icon.name: "task-complete"
+                    icon.name: "dialog-ok-apply"
                     onClicked: root.completeTodo(itemData.id)
                     QQC2.ToolTip.text: "Mark complete"
                     QQC2.ToolTip.visible: hovered
