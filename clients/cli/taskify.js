@@ -32,11 +32,16 @@ async function api(path, options = {}) {
   }
 }
 
-// Command: Lite Thermal Printer Output (Top 1/3 Leaderboard, 32-Char Max Width)
-async function cmdLite() {
-  const data = await api("/tasks?filter=active");
-  let tasks = data.tasks || [];
+// Command: Summary Output (Today's Total Weight + Top 1/3 Leaderboard)
+async function cmdSummary() {
+  const [summaryData, tasksData] = await Promise.all([
+    api("/summary"),
+    api("/tasks?filter=active")
+  ]);
 
+  const tasks = tasksData.tasks || [];
+
+  console.log(`TODAY'S WEIGHT: ${summaryData.total_weight.toFixed(2)} W`);
   console.log("TOP TASK LEADERBOARD");
   console.log("--------------------------------");
 
@@ -48,13 +53,15 @@ async function cmdLite() {
   // Take top third of active leaderboard
   const limit = Math.ceil(tasks.length / 3);
   const selectedTasks = tasks.slice(0, limit);
-  const MAX_WIDTH = 32;
+  const MAX_WIDTH = 42;
 
   selectedTasks.forEach(t => {
     const weightStr = `(${t.metrics.weight.toFixed(2)} W)`;
     const availableForTitle = MAX_WIDTH - weightStr.length - 1;
 
-    let title = t.title;
+    const isOverdue = t.metrics && t.metrics.x > 1.0;
+    let title = (isOverdue ? "! " : "") + t.title;
+
     if (title.length > availableForTitle) {
       title = title.slice(0, availableForTitle);
     }
@@ -169,10 +176,10 @@ async function cmdAdd(args) {
 }
 
 // Command: Summary / Bandwidth
-async function cmdSummary() {
+async function cmdStatus() {
   const data = await api("/summary");
 
-  console.log(`\n${colors.bold}${colors.magenta}=== SYSTEM BANDWIDTH SUMMARY ===${colors.reset}\n`);
+  console.log(`\n${colors.bold}${colors.magenta}=== SYSTEM BANDWIDTH STATUS ===${colors.reset}\n`);
   console.log(`  ${colors.bold}Total Urgency Weight:${colors.reset}  ${data.total_weight.toFixed(2)} W`);
   console.log(`  ${colors.bold}Daily Maintenance Load:${colors.reset} ${data.total_active_cost_au.toFixed(2)} / ${data.effective_capacity_au.toFixed(2)} AU/day\n`);
 
@@ -192,6 +199,7 @@ ${colors.bold}USAGE:${colors.reset}
   taskify <command> [options]
 
 ${colors.bold}COMMANDS:${colors.reset}
+  summary [--summary]   Print today's total weight & top 1/3 leaderboard summary
   top [N]               Show today's top N priorities (default: 3)
   ls [--all|--inactive|--completed] List all tasks sorted by urgency
   done <id>             Mark a task complete by ID
@@ -202,8 +210,7 @@ ${colors.bold}COMMANDS:${colors.reset}
                               -e <0.5|1.0|2.5> (effort)
                               -d <executive_mental|physical_somatic|social_relational>
                               -a <days_ago>
-  summary               View capacity load & domain AU breakdown
-  lite | --lite         Format top 1/3 of leaderboard for 32-col receipt printer
+  status [--status]               View capacity load & domain AU breakdown
   help                  Show this menu
   `);
 }
@@ -212,12 +219,12 @@ ${colors.bold}COMMANDS:${colors.reset}
 const [, , cmd, ...args] = process.argv;
 
 switch (cmd) {
+  case "summary":
+  case "--summary":
+    cmdSummary();
+    break;
   case "top":
     cmdTop(args[0]);
-    break;
-  case "lite":
-  case "--lite":
-    cmdLite();
     break;
   case "ls":
   case "list":
@@ -230,9 +237,9 @@ switch (cmd) {
   case "add":
     cmdAdd(args);
     break;
-  case "summary":
   case "status":
-    cmdSummary();
+  case "--status":
+    cmdStatus();
     break;
   default:
     if (!cmd || cmd === "help") {
