@@ -35,9 +35,11 @@ system_physics:
 
   # ----------------------------------------------------------------------------
   # DYNAMIC URGENCY WEIGHT EQUATIONS W(x)
-  # Real-world meaning: Measures current priority ranking on the leaderboard.
+  # Uses S_effective which combines base significance, progress multiplier (R),
+  # deferment debuffs, and vacation multipliers.
   # ----------------------------------------------------------------------------
   urgency_weight:
+    effective_significance_formula: "S_effective = R * S_deferment_debuff * S_vacation_multiplier"
     logarithmic_phase:
       condition: "0 <= x <= 1"
       equation: "W(x) = S_effective * ( ln(1 + a * x) / ln(1 + a) )"
@@ -59,14 +61,14 @@ recurrence_and_lifecycle:
   is_recurring:
     type: "boolean"
     default: true
-    description: "Determines task behavior upon completion."
+    description: "Determines task behavior upon 100% completion (accumulated_progress >= 1.0)."
     completion_handler:
       recurring_true:
-        action: "Reset urgency anchor timestamp (delta_t = 0). Maintain deferment_count intact."
+        action: "Reset urgency anchor timestamp (delta_t = 0), reset accumulated_progress = 0.0 (R = 1.0), and record full completion log."
         target_state: "active"
-        description: "Task remains active, resets base significance (clearing temporary debuffs), and begins a new urgency cycle."
+        description: "Task remains active, clears partial progress, and begins a new urgency cycle."
       recurring_false:
-        action: "Mark completion timestamp and halt urgency clock. Maintain deferment_count intact."
+        action: "Mark full completion timestamp, reset accumulated_progress = 0.0, halt urgency clock."
         target_state: "completed"
         description: "Task transitions to terminal completed state permanently."
     capacity_handler:
@@ -139,9 +141,78 @@ todo_states:
       urgency_clock_behavior: "Do not calculate urgency while paused."
       on_return_to_active: "Reset the urgency anchor to the reactivation time so x = 0; do not record a completion event."
     completed:
-      description: "Terminal state for non-recurring singletons (is_recurring: false) after task execution."
+      description: "Terminal state for non-recurring singletons (is_recurring: false) after 100% completion."
       urgency_clock_behavior: "Clock stopped permanently. Excluded from urgency, capacity, leaderboard, and routing calculations."
-      on_return_to_active: "If un-completed or reactivated manually, reset urgency anchor to current timestamp (delta_t = 0)."
+      on_return_to_active: "If un-completed or reactivated manually, reset urgency anchor to current timestamp (delta_t = 0) and progress = 0.0."
+
+# ==============================================================================
+# PARTIAL COMPLETION MECHANICS (PROGRESS & EFFORT/SIGNIFICANCE SCALING)
+# ==============================================================================
+
+partial_completions:
+  description: "Allows logging partial progress P in (0, 100%) to squish a task's priority and capacity footprint without altering the urgency clock or deadline."
+
+  progress_tracking:
+    accumulated_progress:
+      type: "float"
+      range: "0.0 to 1.0"
+      default: 0.0
+      description: "Cumulative percentage of task completed since last full reset."
+      increment_rule: "p_accum_new = min(1.0, p_accum_old + (P / 100.0))"
+
+    remaining_work_multiplier:
+      formula: "R = 1.0 - accumulated_progress"
+      range: "0.0 < R <= 1.0"
+      description: "Linear scaling factor representing remaining effort and significance required."
+
+  dual_scaling_behavior:
+    significance_scaling:
+      formula: "S_effective = R * S_base"
+      behavior: "Immediately reduces urgency weight W(x) proportionally to progress made, dropping the task lower on the leaderboard."
+
+    effort_scaling:
+      formula: "E_effective = R * E_base"
+      behavior: "Scales active cognitive heaviness continuously. Instantly reduces daily domain maintenance load C_i = E_effective / T_i, freeing Attention Units."
+
+    actionability_ratio_stability:
+      formula: "ROI = W(x) / E_effective = (R * S * f(x)) / (R * E) = (S * f(x)) / E"
+      behavior: "The effort-to-urgency priority ratio remains mathematically stable regardless of partial progress made."
+
+  system_safeguards:
+    urgency_clock_safeguard:
+      rule: "Logging partial progress MUST NOT reset or modify urgency_anchor_at (delta_t)."
+      rationale: "Prevents partial check-ins from granting an artificial deadline extension."
+    completion_timestamp_safeguard:
+      rule: "last_completed_at is NOT updated during partial progress check-ins."
+      rationale: "Reserves last_completed_at strictly for 100% completion milestones."
+    analytics_isolation:
+      rule: "Completion log entries specify progress_increment = P / 100.0."
+      query_filtering: "History analytics and completion lists filter by progress_increment == 1.0 to isolate full completions."
+
+  full_completion_trigger:
+    condition: "accumulated_progress >= 1.0"
+    action: "Triggers standard 100% completion lifecycle (resets progress to 0.0, updates last_completed_at, and resets anchor or moves to completed state)."
+
+  comparison_with_deferment:
+    matrix:
+      intent:
+        partial_completion: "Active progress / work expended"
+        deferment: "Procrastination / deliberate delay"
+      clock_anchor:
+        partial_completion: "Untouched (deadlines remain fixed)"
+        deferment: "Untouched (deadlines remain fixed)"
+      significance_effect:
+        partial_completion: "Scaled to R * S_base (stays reduced)"
+        deferment: "Debuffed to 0.10 * S_base, decays back up"
+      effort_effect:
+        partial_completion: "Scaled to R * E_base (frees AU capacity)"
+        deferment: "Unchanged (E_base remains fixed)"
+      overshoot_penalty:
+        partial_completion: "None"
+        deferment: "Rebounds up to 1.2x - 1.5x penalty peak"
+      ui_indicator:
+        partial_completion: "Progress ring / progress bar"
+        deferment: "deferment_count badge"
 
 # ==============================================================================
 # DEFERMENT MECHANICS (TEMPORARY SIGNIFICANCE DEBUFF & REBOUND)
@@ -221,9 +292,8 @@ domains_and_capacity:
   # ----------------------------------------------------------------------------
   # ATTENTION UNIT (AU) DEFINITION
   # 1.0 AU = Daily maintenance cost of a Standard Effort (E=1.0) task with a 1-day interval (T=1.0).
-  # Formula for Daily Maintenance Cost: C_i = E_i / T_i
   # ----------------------------------------------------------------------------
-  cost_formula: "C_i = E_i / T_i"
+  cost_formula: "C_i = E_effective / T_i = (R * E_base) / T_i"
 
   # ----------------------------------------------------------------------------
   # ONCE-OFF TASK LOAD (is_recurring: false)
