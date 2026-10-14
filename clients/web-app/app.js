@@ -3,9 +3,9 @@
 const API_URL = ((window.ENV && window.ENV.API_URL) || "http://localhost:8085/api/v1").replace(/\/+$/, "");
 
 const HALT_STATES = [
-  { icon: "⏸", text: "Pause", value: "paused" },
-  { icon: "❄", text: "Freeze", value: "frozen" },
-  { icon: "🛇", text: "Hide", value: "hidden" },
+  { icon: "⏸", text: "Pause", value: "paused", tip: "Pause: stop tracking this task. When restarted, its clock begins again from zero." },
+  { icon: "❄", text: "Freeze", value: "frozen", tip: "Freeze: stop the clock where it is. When restarted, it resumes from the same point, as if no time passed." },
+  { icon: "🛇", text: "Hide", value: "hidden", tip: "Hide: remove from the list and load, but the clock keeps running. When restarted, it's as overdue as it would have been." },
 ];
 
 // ---------- API client ----------
@@ -167,6 +167,12 @@ function closeOverlay() {
 
 const isOverlayOpen = () => el.overlay.classList.contains("open");
 
+// Option values are "4.0" while the API returns 4, so compare numerically
+function selectNumeric(select, value, fallbackIndex) {
+  const i = [...select.options].findIndex((o) => Number(o.value) === Number(value));
+  select.selectedIndex = i < 0 ? fallbackIndex : i;
+}
+
 function setEditing(todo) {
   editingTodo = todo;
   disarmDelete();
@@ -175,11 +181,9 @@ function setEditing(todo) {
     el.interval.value = Number(todo.interval_days) || 7;
     el.once.checked = todo.is_recurring === 0;
     el.daysAgo.value = Math.round(getMetrics(todo).elapsedDays);
-    el.significance.value = String(Number(todo.significance));
-    el.effort.value = String(Number(todo.effort));
+    selectNumeric(el.significance, todo.significance, 0);
+    selectNumeric(el.effort, todo.effort, 1);
     el.domain.value = todo.domain;
-    if (el.significance.selectedIndex < 0) el.significance.selectedIndex = 0;
-    if (el.effort.selectedIndex < 0) el.effort.selectedIndex = 1;
     if (el.domain.selectedIndex < 0) el.domain.selectedIndex = 0;
   } else {
     el.title.value = "";
@@ -193,7 +197,25 @@ function setEditing(todo) {
   updateFormVisibility();
 }
 
+const SIGNIFICANCE_HELP = {
+  "1.0": "Low: flexible habits that can slip without consequence (casual reading, wiping counters).",
+  "1.6": "Medium: routine upkeep (vacuuming, groceries).",
+  "2.5": "High: key relational or operational items (calling mom, bill prep).",
+  "4.0": "Critical: real consequences if missed (rent, car oil change). Becomes urgent 4× as fast as Low.",
+};
+const EFFORT_HELP = {
+  "0.5": "Quick: under 5 minutes, little friction (take a pill, wipe the table).",
+  "1.0": "Standard: 15-30 minutes of moderate focus (vacuum a room, a 20-minute call).",
+  "2.5": "Heavy: 60+ minutes or high friction (deep clean the garage, tax prep).",
+};
+
+function updateFieldHelp() {
+  $("significance-help").textContent = SIGNIFICANCE_HELP[el.significance.value] || "";
+  $("effort-help").textContent = EFFORT_HELP[el.effort.value] || "";
+}
+
 function updateFormVisibility() {
+  updateFieldHelp();
   const once = el.once.checked;
   el.intervalLabel.textContent = once ? "Due in" : "Every";
   el.daysLabel.textContent = once ? "days" : "days | Done";
@@ -338,7 +360,7 @@ function openStatePopover(li, todo) {
   const pop = document.createElement("div");
   pop.className = "state-pop";
   for (const h of HALT_STATES) {
-    pop.append(iconButton(h.icon, h.text, () => {
+    pop.append(iconButton(h.icon, h.tip, () => {
       closeStatePopover();
       act(() => api.setTaskState(todo.id, h.value));
     }));
@@ -420,6 +442,8 @@ el.cancel.addEventListener("click", closeOverlay);
 el.overlayBackdrop.addEventListener("click", closeOverlay);
 el.openAdd.addEventListener("click", () => openOverlay(null));
 el.once.addEventListener("change", updateFormVisibility);
+el.significance.addEventListener("change", updateFieldHelp);
+el.effort.addEventListener("change", updateFieldHelp);
 document.addEventListener("keydown", (e) => {
   if (e.key !== "Escape") return;
   if (document.querySelector(".state-pop")) closeStatePopover();

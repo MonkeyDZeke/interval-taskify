@@ -53,28 +53,42 @@
         <span id="days-label">days | Done</span>
         <input id="days-ago" type="number" min="0" max="3650" value="0" title="Days since task was last completed">
         <span id="days-ago-label">days ago</span>
-        <select id="significance" class="grow" title="Significance">
-          <option value="1.0">Low</option>
-          <option value="1.6">Medium</option>
-          <option value="2.5">High</option>
-          <option value="4.0">Critical</option>
-        </select>
-        <select id="effort" title="Effort">
-          <option value="0.5">Quick</option>
-          <option value="1.0" selected>Standard</option>
-          <option value="2.5">Heavy</option>
-        </select>
-      </div>
-
-      <div class="row">
-        <select id="domain" class="grow">
-          <option value="executive_mental">Mental / Executive</option>
-          <option value="physical_somatic">Physical / Somatic</option>
-          <option value="social_relational">Social / Relational</option>
-        </select>
+        <span class="spacer"></span>
         <label class="check" title="Task completes permanently instead of recurring">
           <input id="once" type="checkbox"> Once-off
         </label>
+      </div>
+
+      <div class="row fields">
+        <label class="field grow">Domain
+          <select id="domain">
+            <option value="executive_mental">Mental / Executive</option>
+            <option value="physical_somatic">Physical / Somatic</option>
+            <option value="social_relational">Social / Relational</option>
+          </select>
+        </label>
+        <label class="field">Significance
+          <select id="significance">
+            <option value="1.0">Low</option>
+            <option value="1.6">Medium</option>
+            <option value="2.5">High</option>
+            <option value="4.0">Critical</option>
+          </select>
+        </label>
+        <label class="field">Effort
+          <select id="effort">
+            <option value="0.5">Quick</option>
+            <option value="1.0" selected>Standard</option>
+            <option value="2.5">Heavy</option>
+          </select>
+        </label>
+      </div>
+
+      <div class="help small muted">
+        <div><b>Significance</b> is how bad it is if this slips. It sets how fast urgency builds.</div>
+        <div class="tier-help" id="significance-help"></div>
+        <div><b>Effort</b> is how much energy it takes. It counts against your daily capacity, not urgency.</div>
+        <div class="tier-help" id="effort-help"></div>
       </div>
 
       <div class="row actions">
