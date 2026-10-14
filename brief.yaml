@@ -429,3 +429,90 @@ leaderboard_routing:
     condition: "x <= 1.0"
     sorting: "W(x) / S_effective DESC"
     description: "Surfaces tasks approaching peak epoch that offer maximum proactive load reduction."
+
+# ==============================================================================
+# IMPLEMENTATION STATUS
+# Tracks which parts of this specification exist in the service (service/src).
+# done: true  = implemented and covered by service tests.
+# done: false = specified above but not yet implemented.
+# ==============================================================================
+
+implementation_status:
+  features:
+    urgency_engine:
+      - { feature: "Time normalization x = delta_t / T", done: true }
+      - { feature: "Logarithmic phase W(x) for 0 <= x <= 1 (a = 10)", done: true }
+      - { feature: "Exponential phase W(x) for x > 1 (b = 1.386)", done: true }
+      - { feature: "Actionability ratio W(x) / E", done: true }
+      - { feature: "Significance tiers 1.0 / 1.6 / 2.5 / 4.0 used as base S", done: true }
+      - { feature: "Significance tier validation (reject non-tier values)", done: false }
+      - { feature: "Effort preset validation (0.5 / 1.0 / 2.5)", done: false }
+
+    recurrence_and_lifecycle:
+      - { feature: "is_recurring flag (default true)", done: true }
+      - { feature: "Recurring completion resets urgency anchor and logs completion", done: true }
+      - { feature: "Once-off completion halts clock and moves to completed", done: true }
+
+    todo_states:
+      - { feature: "active state", done: true }
+      - { feature: "frozen state (clock held, resumes from same elapsed position)", done: true }
+      - { feature: "hidden state (clock keeps advancing)", done: true }
+      - { feature: "paused state (anchor reset on reactivation, no completion logged)", done: true }
+      - { feature: "completed state (reactivation resets anchor)", done: true }
+      - { feature: "Only active tasks counted in summary and leaderboard", done: true }
+
+    capacity:
+      - { feature: "Recurring daily cost C_i = E / T", done: true }
+      - { feature: "Once-off cost ramp C_i(x) = E * R(x), peak E independent of T", done: true }
+      - { feature: "Per-domain loads against caps (5.0 / 4.0 / 3.0 AU)", done: true }
+      - { feature: "System baseline ceiling 12.0 AU", done: true }
+      - { feature: "Burnout / overwhelm threshold (overdue debt > 25%, load > 100%)", done: false }
+      - { feature: "UI heatmap zones (green / yellow / red)", done: false }
+      - { feature: "Context switcher (work / home / study) with per-context capacity", done: false }
+      - { feature: "Overload bleedthrough to adjacent contexts", done: false }
+
+    partial_completions:
+      - { feature: "Log partial progress P and accumulated_progress", done: false }
+      - { feature: "Remaining-work multiplier R scales S and E", done: false }
+      - { feature: "Safeguards: partial progress leaves anchor and last_completed_at untouched", done: false }
+      - { feature: "Completion log progress_increment and full-completion filtering", done: false }
+
+    deferment:
+      - { feature: "Defer action and lifetime deferment_count", done: false }
+      - { feature: "Debuff and rebound significance curve (three phases, M(k) = 1 + 0.1k)", done: false }
+
+    viability_windows:
+      - { feature: "Day-of-week, time-of-day and date-range windows", done: false }
+      - { feature: "Out-of-window tasks treated as hidden", done: false }
+
+    vacations:
+      - { feature: "Vacation profiles with start / end and early termination", done: false }
+      - { feature: "Task overrides: state, significance multiplier, effort override", done: false }
+      - { feature: "Suggested vacation from capacity reduction and triage engine", done: false }
+
+    leaderboard_routing:
+      - { feature: "Top-N leaderboard by weight (GET /tasks/top)", done: true }
+      - { feature: "Dynamic category sampling by load share", done: false }
+      - { feature: "Proactive radar bucket (x <= 1.0, sorted by W(x) / S)", done: false }
+
+    service_api:
+      - { feature: "Task CRUD, complete, and state change endpoints", done: true }
+      - { feature: "Task list filtering (state, domain), sorting and limit", done: true }
+      - { feature: "Summary endpoint with domain loads", done: true }
+      - { feature: "Export / import backup with transactional rollback", done: true }
+      - { feature: "SQLite persistence with versioned migrations", done: true }
+      - { feature: "Service test suite (engine, db, API) via node:test", done: true }
+
+  known_bugs:
+    - id: "BUG-1"
+      title: "Significance is not validated against the four tiers"
+      detail: "createTask / updateTask and POST/PUT /tasks accept any numeric significance (e.g. 5 or 0.3). Only 1.0, 1.6, 2.5 and 4.0 are valid per significance_tiers."
+      location: "service/src/db.js, service/src/routes.js"
+    - id: "BUG-2"
+      title: "Effort is not validated against the effort presets"
+      detail: "Any numeric effort is accepted, including 0 and negative values. Only 0.5, 1.0 and 2.5 are defined by effort_levels."
+      location: "service/src/db.js, service/src/routes.js"
+    - id: "BUG-3"
+      title: "Once-off task handling differs between create and update"
+      detail: "createTask with days_ago leaves last_completed_at null for once-off tasks, but updateTask with days_ago sets it. last_completed_at is reserved for real completions. Covered by a todo test in service/test/db.test.js."
+      location: "service/src/db.js"
