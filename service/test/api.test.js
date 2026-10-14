@@ -128,6 +128,14 @@ describe("single-task routes", () => {
     assert.equal((await call("PUT", "/api/v1/tasks/999", { title: "x" })).status, 404);
   });
 
+  test("update rejects blank and non-string titles", async () => {
+    const t = await create({ title: "A" });
+    for (const title of ["   ", null, 1]) {
+      assert.equal((await call("PUT", `/api/v1/tasks/${t.id}`, { title })).status, 400);
+    }
+    assert.equal((await call("GET", `/api/v1/tasks/${t.id}`)).body.task.title, "A");
+  });
+
   test("complete resets a recurring task; 404 for unknown", async () => {
     const t = await create({ title: "A", interval_days: 5, days_ago: 9 });
     const r = await call("POST", `/api/v1/tasks/${t.id}/complete`);

@@ -71,6 +71,10 @@ router.post("/tasks", (req, res) => {
 
 // PUT /api/v1/tasks/:id - Update task
 router.put("/tasks/:id", (req, res) => {
+  if (req.body.title !== undefined &&
+      (typeof req.body.title !== "string" || req.body.title.trim() === "")) {
+    return res.status(400).json({ error: "Title is required" });
+  }
   const task = db.updateTask(req.params.id, req.body);
   if (!task) return res.status(404).json({ error: "Task not found" });
   res.json({ task: { ...task, metrics: engine.getMetrics(task) } });
