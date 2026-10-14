@@ -83,6 +83,57 @@ describe("GET /tasks", () => {
   });
 });
 
+describe("tier and preset validation", () => {
+  const BAD_SIGNIFICANCE = [5, 0, -1, 0.3, 1.5, "2.5", null];
+  const BAD_EFFORT = [0, -1, 2, 5, 0.25, "1.0", null];
+
+  test("accepts every valid tier and preset on create", async () => {
+    for (const significance of [1.0, 1.6, 2.5, 4.0]) {
+      assert.equal((await call("POST", "/api/v1/tasks", { title: "t", significance })).status, 201);
+    }
+    for (const effort of [0.5, 1.0, 2.5]) {
+      assert.equal((await call("POST", "/api/v1/tasks", { title: "t", effort })).status, 201);
+    }
+  });
+
+  test("rejects invalid significance and effort on create", async () => {
+    for (const significance of BAD_SIGNIFICANCE) {
+      const r = await call("POST", "/api/v1/tasks", { title: "t", significance });
+      assert.equal(r.status, 400, `significance ${JSON.stringify(significance)}`);
+      assert.match(r.body.error, /significance/);
+    }
+    for (const effort of BAD_EFFORT) {
+      const r = await call("POST", "/api/v1/tasks", { title: "t", effort });
+      assert.equal(r.status, 400, `effort ${JSON.stringify(effort)}`);
+      assert.match(r.body.error, /effort/);
+    }
+    assert.equal((await call("GET", "/api/v1/tasks?filter=all")).body.tasks.length, 0);
+  });
+
+  test("rejects invalid values on update and leaves the task unchanged", async () => {
+    const t = await create({ title: "t", significance: 2.5, effort: 0.5 });
+    assert.equal((await call("PUT", `/api/v1/tasks/${t.id}`, { significance: 5 })).status, 400);
+    assert.equal((await call("PUT", `/api/v1/tasks/${t.id}`, { effort: 3 })).status, 400);
+    const after = (await call("GET", `/api/v1/tasks/${t.id}`)).body.task;
+    assert.equal(after.significance, 2.5);
+    assert.equal(after.effort, 0.5);
+  });
+
+  test("partial update with valid or absent fields still works", async () => {
+    const t = await create({ title: "t" });
+    const r = await call("PUT", `/api/v1/tasks/${t.id}`, { significance: 4.0 });
+    assert.equal(r.status, 200);
+    assert.equal(r.body.task.significance, 4);
+    assert.equal(r.body.task.effort, 1);
+  });
+
+  test("defaults still apply when fields are omitted", async () => {
+    const t = await create({ title: "t" });
+    assert.equal(t.significance, 1);
+    assert.equal(t.effort, 1);
+  });
+});
+
 describe("tiers via the API", () => {
   const TIERS = [1.0, 1.6, 2.5, 4.0];
 
@@ -195,5 +246,13 @@ describe("export / import", () => {
 
   test("rejects invalid backup", async () => {
     assert.equal((await call("POST", "/api/v1/import", { nope: true })).status, 400);
+  });
+
+  test("import normalizes off-tier values instead of rejecting them", async () => {
+    const todo = { id: 1, title: "old", created_at: new Date().toISOString(), urgency_anchor_at: new Date().toISOString(), interval_days: 7, significance: 5, effort: 3, domain: "executive_mental" };
+    assert.equal((await call("POST", "/api/v1/import", { todos: [todo] })).status, 200);
+    const t = (await call("GET", "/api/v1/tasks/1")).body.task;
+    assert.equal(t.significance, 4);
+    assert.equal(t.effort, 2.5);
   });
 });

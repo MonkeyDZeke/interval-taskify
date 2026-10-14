@@ -1,6 +1,7 @@
 const { DatabaseSync } = require("node:sqlite");
 const path = require("path");
 const fs = require("fs");
+const { normalizeSignificance, normalizeEffort } = require("./validation");
 
 // TASKIFY_DB overrides the database location (":memory:" is used by tests).
 let dbPath = process.env.TASKIFY_DB;
@@ -116,11 +117,14 @@ function updateTask(id, data) {
   let anchorIso = existing.urgency_anchor_at;
   let lastCompletedIso = existing.last_completed_at;
 
+  const isRecurring = toRecurringFlag(data.is_recurring, existing.is_recurring);
+
   if (data.days_ago !== undefined) {
     const daysAgo = Number(data.days_ago);
     const anchorMs = nowMs - (daysAgo * 86400000);
     anchorIso = new Date(anchorMs).toISOString();
-    lastCompletedIso = daysAgo > 0 ? anchorIso : null;
+    // Matches createTask: only recurring tasks treat a backdated anchor as a past completion
+    lastCompletedIso = isRecurring && daysAgo > 0 ? anchorIso : null;
   }
 
   const stmt = db.prepare(`
@@ -137,7 +141,7 @@ function updateTask(id, data) {
     data.domain !== undefined ? data.domain : existing.domain,
     anchorIso,
     lastCompletedIso,
-    toRecurringFlag(data.is_recurring, existing.is_recurring),
+    isRecurring,
     id
   );
 
@@ -253,8 +257,8 @@ function importData(payload) {
         t.last_completed_at || null,
         t.urgency_anchor_at,
         t.interval_days,
-        t.significance,
-        t.effort,
+        normalizeSignificance(t.significance),
+        normalizeEffort(t.effort),
         t.domain,
         t.state || 'active',
         t.frozen_at || null,

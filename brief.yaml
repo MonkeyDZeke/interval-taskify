@@ -445,8 +445,9 @@ implementation_status:
       - { feature: "Exponential phase W(x) for x > 1 (b = 1.386)", done: true }
       - { feature: "Actionability ratio W(x) / E", done: true }
       - { feature: "Significance tiers 1.0 / 1.6 / 2.5 / 4.0 used as base S", done: true }
-      - { feature: "Significance tier validation (reject non-tier values)", done: false }
-      - { feature: "Effort preset validation (0.5 / 1.0 / 2.5)", done: false }
+      - { feature: "Significance tier validation (reject non-tier values)", done: true }
+      - { feature: "Effort preset validation (0.5 / 1.0 / 2.5)", done: true }
+      - { feature: "Import normalizes significance / effort to the nearest tier / preset", done: true }
 
     recurrence_and_lifecycle:
       - { feature: "is_recurring flag (default true)", done: true }
@@ -503,16 +504,15 @@ implementation_status:
       - { feature: "SQLite persistence with versioned migrations", done: true }
       - { feature: "Service test suite (engine, db, API) via node:test", done: true }
 
-  known_bugs:
+  known_bugs: []
+
+  fixed_bugs:
     - id: "BUG-1"
-      title: "Significance is not validated against the four tiers"
-      detail: "createTask / updateTask and POST/PUT /tasks accept any numeric significance (e.g. 5 or 0.3). Only 1.0, 1.6, 2.5 and 4.0 are valid per significance_tiers."
-      location: "service/src/db.js, service/src/routes.js"
+      title: "Significance was not validated against the four tiers"
+      fix: "POST/PUT /tasks return 400 unless significance is exactly 1.0, 1.6, 2.5 or 4.0 (service/src/validation.js)."
     - id: "BUG-2"
-      title: "Effort is not validated against the effort presets"
-      detail: "Non-preset effort values are not rejected: createTask defaults 0 to 1.0 but accepts negative values, while updateTask accepts both 0 and negative values. Only 0.5, 1.0 and 2.5 are defined by effort_levels."
-      location: "service/src/db.js, service/src/routes.js"
+      title: "Effort was not validated against the effort presets"
+      fix: "POST/PUT /tasks return 400 unless effort is exactly 0.5, 1.0 or 2.5. Omitted fields keep their defaults (create) or current value (update)."
     - id: "BUG-3"
-      title: "Once-off task handling differs between create and update"
-      detail: "createTask with days_ago leaves last_completed_at null for once-off tasks, but updateTask with days_ago sets it. last_completed_at is reserved for real completions. Covered by a todo test in service/test/db.test.js."
-      location: "service/src/db.js"
+      title: "Once-off task handling differed between create and update"
+      fix: "updateTask with days_ago now leaves last_completed_at null for once-off tasks, matching createTask, and honours is_recurring changed in the same call."

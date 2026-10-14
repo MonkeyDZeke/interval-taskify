@@ -4,6 +4,7 @@ const { test, describe, beforeEach, afterEach, mock } = require("node:test");
 const assert = require("node:assert/strict");
 const db = require("../src/db");
 const { getMetrics } = require("../src/engine");
+const { normalizeSignificance, normalizeEffort } = require("../src/validation");
 
 const T0 = Date.parse("2026-01-01T00:00:00.000Z");
 const DAY = 86400000;
@@ -76,12 +77,18 @@ describe("updateTask", () => {
     assert.equal(b.urgency_anchor_at, iso(T0));
     assert.equal(b.last_completed_at, null);
   });
-  // Brief: last_completed_at is reserved for completions; once-off backdating in createTask leaves it null,
-  // but updateTask sets it regardless of is_recurring.
-  test("updateTask days_ago treats once-off tasks like createTask does", { todo: true }, () => {
+  // Brief: last_completed_at is reserved for real completions
+  test("updateTask days_ago treats once-off tasks like createTask does", () => {
     const t = db.createTask({ title: "a", is_recurring: false });
     const u = db.updateTask(t.id, { days_ago: 3 });
+    assert.equal(u.urgency_anchor_at, iso(T0 - 3 * DAY));
     assert.equal(u.last_completed_at, null);
+  });
+
+  test("updateTask honours is_recurring changed in the same call", () => {
+    const t = db.createTask({ title: "a", is_recurring: false });
+    assert.equal(db.updateTask(t.id, { days_ago: 3, is_recurring: true }).last_completed_at, iso(T0 - 3 * DAY));
+    assert.equal(db.updateTask(t.id, { days_ago: 3, is_recurring: false }).last_completed_at, null);
   });
 });
 
@@ -204,6 +211,36 @@ describe("export / import", () => {
     const again = db.exportData();
     assert.deepEqual(again.todos, snapshot.todos);
     assert.deepEqual(again.completions.map(c => c.completed_at), snapshot.completions.map(c => c.completed_at));
+  });
+
+  test("normalizes off-tier significance and effort to the nearest value", () => {
+    const base = { created_at: iso(T0), urgency_anchor_at: iso(T0), interval_days: 7, domain: "executive_mental" };
+    const cases = [
+      [5, 4.0, 3, 2.5],
+      [3.1, 2.5, 1.8, 2.5],
+      [2.0, 1.6, 0.8, 1.0],
+      [0.3, 1.0, 0.1, 0.5],
+      [0, 1.0, 0, 0.5],
+      [-2, 1.0, -1, 0.5],
+      [1.6, 1.6, 0.5, 0.5],
+      ["2.4", 2.5, "1.1", 1.0],
+      [null, 1.0, null, 1.0],
+      [undefined, 1.0, "abc", 1.0]
+    ];
+    const todos = cases.map(([significance, , effort], i) => ({ ...base, id: i + 1, title: `t${i}`, significance, effort }));
+    assert.equal(db.importData({ todos }), true);
+    const stored = db.getAllTasks();
+    cases.forEach(([, sig, , eff], i) => {
+      assert.equal(stored[i].significance, sig, `case ${i} significance`);
+      assert.equal(stored[i].effort, eff, `case ${i} effort`);
+    });
+  });
+
+  test("ties between tiers snap to the lower value", () => {
+    assert.equal(normalizeSignificance(1.3), 1.0);
+    assert.equal(normalizeSignificance(3.25), 2.5);
+    assert.equal(normalizeEffort(0.75), 0.5);
+    assert.equal(normalizeEffort(1.75), 1.0);
   });
 
   test("rejects malformed payloads without touching data", () => {

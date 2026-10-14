@@ -1,6 +1,7 @@
 const express = require("express");
 const db = require("./db");
 const engine = require("./engine");
+const { validateTaskPayload } = require("./validation");
 
 const router = express.Router();
 
@@ -65,12 +66,16 @@ router.post("/tasks", (req, res) => {
   if (typeof req.body.title !== "string" || req.body.title.trim() === "") {
     return res.status(400).json({ error: "Title is required" });
   }
+  const invalid = validateTaskPayload(req.body);
+  if (invalid) return res.status(400).json({ error: invalid });
   const task = db.createTask(req.body);
   res.status(201).json({ task: { ...task, metrics: engine.getMetrics(task) } });
 });
 
 // PUT /api/v1/tasks/:id - Update task
 router.put("/tasks/:id", (req, res) => {
+  const invalid = validateTaskPayload(req.body);
+  if (invalid) return res.status(400).json({ error: invalid });
   if (req.body.title !== undefined &&
       (typeof req.body.title !== "string" || req.body.title.trim() === "")) {
     return res.status(400).json({ error: "Title is required" });
