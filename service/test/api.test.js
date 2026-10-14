@@ -151,10 +151,28 @@ describe("single-task routes", () => {
 });
 
 test("GET /summary reflects tasks and energy factor", async () => {
-  await create({ title: "A", interval_days: 10, effort: 5, domain: "physical_somatic" });
+  await create({ title: "A", interval_days: 10, effort: 2.5, domain: "physical_somatic" });
   const r = await call("GET", "/api/v1/summary?energy_factor=0.5");
   assert.equal(r.body.effective_capacity_au, 6);
-  assert.equal(r.body.domain_loads.physical_somatic.current, 0.5);
+  assert.equal(r.body.domain_loads.physical_somatic.current, 0.25);
+});
+
+test("only active tasks appear on the leaderboard and default list", async () => {
+  const states = ["frozen", "hidden", "paused"];
+  const keep = await create({ title: "active", interval_days: 10, days_ago: 10 });
+  for (const state of states) {
+    const t = await create({ title: state, interval_days: 10, days_ago: 30 });
+    await call("PATCH", `/api/v1/tasks/${t.id}/state`, { state });
+  }
+  const done = await create({ title: "completed", interval_days: 10, days_ago: 30, is_recurring: false });
+  await call("POST", `/api/v1/tasks/${done.id}/complete`);
+
+  for (const path of ["/api/v1/tasks", "/api/v1/tasks/top"]) {
+    const r = await call("GET", path);
+    assert.deepEqual(r.body.tasks.map(t => t.id), [keep.id], path);
+  }
+  const summary = (await call("GET", "/api/v1/summary")).body;
+  assert.equal(summary.total_weight, 1);
 });
 
 describe("export / import", () => {

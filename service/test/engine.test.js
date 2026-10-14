@@ -9,7 +9,7 @@ function task(overrides = {}) {
   return {
     interval_days: 10,
     significance: 4.0,
-    effort: 2,
+    effort: 1.0,
     domain: "executive_mental",
     state: "active",
     is_recurring: 1,
@@ -47,40 +47,114 @@ describe("getMetrics", () => {
     assert.ok(Math.abs(tier4 - tier1) < 0.01);
   });
 
-  test("weight is logarithmic and increasing before x = 1", () => {
-    const early = getMetrics(task({ urgency_anchor_at: ago(2) }), NOW).weight;
-    const late = getMetrics(task({ urgency_anchor_at: ago(8) }), NOW).weight;
-    assert.ok(early > 0 && early < late && late < 4);
-    // concave: 20% elapsed already gives well over 20% of significance
-    assert.ok(early > 0.8);
+  // Brief system_physics.a: "Reclaims ~75% of base weight S at half-interval (x = 0.5)"
+  test("log phase reaches ~75% of S at x = 0.5", () => {
+    const w = getMetrics(task({ significance: 1.0, interval_days: 10, urgency_anchor_at: ago(5) }), NOW).weight;
+    assert.ok(Math.abs(w - 0.75) < 0.01, `got ${w}`);
   });
 
-  test("weight grows exponentially past x = 1", () => {
-    const m = getMetrics(task({ urgency_anchor_at: ago(20) }), NOW);
-    assert.equal(m.weight, Number((4 * Math.exp(1.386)).toFixed(2)));
+  test("log phase follows ln(1 + a*x) / ln(1 + a) with a = 10", () => {
+    for (const [days, expected] of [[1, 0.2899], [2, 0.4583], [5, 0.7472], [8, 0.9163]]) {
+      const w = getMetrics(task({ significance: 1.0, urgency_anchor_at: ago(days) }), NOW).weight;
+      assert.ok(Math.abs(w - expected) < 0.005, `x=${days / 10}: got ${w}, want ${expected}`);
+    }
   });
 
-  test("recurring daily cost is effort / interval", () => {
-    assert.equal(getMetrics(task({ urgency_anchor_at: ago(3) }), NOW).dailyCostAu, 0.2);
+  test("log phase rises from 0, is increasing, and gain slows toward x = 1", () => {
+    const w = days => getMetrics(task({ urgency_anchor_at: ago(days) }), NOW).weight;
+    const samples = [0, 2, 4, 6, 8, 10].map(w);
+    assert.equal(samples[0], 0);
+    for (let i = 1; i < samples.length; i++) assert.ok(samples[i] > samples[i - 1]);
+    const gains = samples.slice(1).map((v, i) => v - samples[i]);
+    for (let i = 1; i < gains.length; i++) assert.ok(gains[i] < gains[i - 1], `gains ${gains}`);
   });
 
-  test("once-off daily cost ramps to full effort and is held when overdue", () => {
-    const once = { is_recurring: 0 };
-    assert.equal(getMetrics(task({ ...once }), NOW).dailyCostAu, 0);
-    assert.equal(getMetrics(task({ ...once, urgency_anchor_at: ago(10) }), NOW).dailyCostAu, 2);
-    assert.equal(getMetrics(task({ ...once, urgency_anchor_at: ago(30) }), NOW).dailyCostAu, 2);
+  // Brief system_physics.b: 2.0*S at x = 1.5, 4.0*S at x = 2.0 (b = 1.386 ~ ln 4)
+  test("exponential phase doubles at x = 1.5 and quadruples at x = 2.0", () => {
+    for (const S of [1.0, 1.6, 2.5, 4.0]) {
+      const at = days => getMetrics(task({ significance: S, urgency_anchor_at: ago(days) }), NOW).weight;
+      assert.ok(Math.abs(at(15) - 2 * S) < 0.02 * S, `S=${S} x=1.5: ${at(15)}`);
+      assert.ok(Math.abs(at(20) - 4 * S) < 0.01 * S, `S=${S} x=2.0: ${at(20)}`);
+    }
   });
 
-  test("actionability is weight / effort, and weight when effort is 0", () => {
+  test("weight is continuous and increasing across the x = 1 boundary", () => {
+    const at = days => getMetrics(task({ significance: 4.0, interval_days: 100, urgency_anchor_at: ago(days) }), NOW).weight;
+    assert.ok(at(99) < at(100) && at(100) < at(101));
+    assert.ok(at(101) - at(99) < 0.2);
+  });
+
+  // Brief system_physics.time_variable: scale invariance, x = delta_t / T
+  test("scale invariance: same x gives same weight regardless of interval", () => {
+    const short = getMetrics(task({ interval_days: 3, urgency_anchor_at: ago(4) }), NOW);
+    const long = getMetrics(task({ interval_days: 21, urgency_anchor_at: ago(28) }), NOW);
+    assert.equal(short.x, long.x);
+    assert.equal(short.weight, long.weight);
+  });
+
+  // Brief cost_formula: C_i = E / T; 1.0 AU = E = 1.0 with T = 1.0
+  test("recurring daily cost is effort / interval and constant over time", () => {
+    for (const days of [0, 3, 10, 40]) {
+      assert.equal(getMetrics(task({ effort: 2.5, urgency_anchor_at: ago(days) }), NOW).dailyCostAu, 0.25);
+    }
+  });
+
+  test("1 AU is a standard-effort task with a 1-day interval", () => {
+    assert.equal(getMetrics(task({ effort: 1.0, interval_days: 1 }), NOW).dailyCostAu, 1);
+  });
+
+  // Brief once_off_cost_formula: C(x) = E * R(x), peak E independent of T, ~0.75E at x = 0.5
+  test("once-off cost ramps with R(x), peaks at E at the due date, and holds when overdue", () => {
+    const cost = (days, extra = {}) =>
+      getMetrics(task({ is_recurring: 0, effort: 2.5, urgency_anchor_at: ago(days), ...extra }), NOW).dailyCostAu;
+    assert.equal(cost(0), 0);
+    assert.ok(Math.abs(cost(5) - 2.5 * 0.7472) < 0.005);
+    assert.equal(cost(10), 2.5);
+    assert.equal(cost(15), 2.5);
+    assert.equal(cost(100), 2.5);
+  });
+
+  test("once-off peak load does not depend on its interval", () => {
+    for (const interval of [1, 7, 30, 365]) {
+      const m = getMetrics(
+        task({ is_recurring: 0, effort: 2.5, interval_days: interval, urgency_anchor_at: ago(interval) }),
+        NOW
+      );
+      assert.equal(m.dailyCostAu, 2.5, `T=${interval}`);
+    }
+  });
+
+  test("once-off cost equals W(x)/S while x <= 1 and is clamped past it, unlike W(x)", () => {
+    const m = getMetrics(task({ is_recurring: 0, significance: 2.5, effort: 1.0, urgency_anchor_at: ago(6) }), NOW);
+    assert.ok(Math.abs(m.dailyCostAu - m.weight / 2.5) < 0.01);
+    const overdue = getMetrics(task({ is_recurring: 0, significance: 2.5, effort: 1.0, urgency_anchor_at: ago(20) }), NOW);
+    assert.equal(overdue.dailyCostAu, 1);
+    assert.ok(overdue.weight > 2.5);
+  });
+
+  // Brief partial_completions.actionability_ratio_stability: ROI = W(x) / E
+  test("actionability is weight / effort", () => {
     const base = { urgency_anchor_at: ago(10) };
-    assert.equal(getMetrics(task(base), NOW).actionability, 2);
-    assert.equal(getMetrics(task({ ...base, effort: 0 }), NOW).actionability, 4);
+    assert.equal(getMetrics(task({ ...base, effort: 0.5 }), NOW).actionability, 8);
+    assert.equal(getMetrics(task({ ...base, effort: 1.0 }), NOW).actionability, 4);
+    assert.equal(getMetrics(task({ ...base, effort: 2.5 }), NOW).actionability, 1.6);
+  });
+
+  test("zero effort falls back to weight rather than dividing by zero (defensive, not in brief)", () => {
+    assert.equal(getMetrics(task({ effort: 0, urgency_anchor_at: ago(10) }), NOW).actionability, 4);
   });
 
   test("frozen task holds its clock at frozen_at", () => {
     const m = getMetrics(task({ state: "frozen", urgency_anchor_at: ago(10), frozen_at: ago(5) }), NOW);
     assert.equal(m.elapsedDays, 5);
     assert.equal(m.statusText, "FROZEN");
+  });
+
+  test("hidden task keeps advancing as if active", () => {
+    const hidden = getMetrics(task({ state: "hidden", urgency_anchor_at: ago(12) }), NOW);
+    const active = getMetrics(task({ state: "active", urgency_anchor_at: ago(12) }), NOW);
+    assert.equal(hidden.elapsedDays, 12);
+    assert.equal(hidden.weight, active.weight);
   });
 
   test("completed task holds its clock at last_completed_at", () => {
@@ -210,24 +284,54 @@ describe("getSummary", () => {
     assert.deepEqual(s.domain_loads.social_relational, { current: 0, max: 3 });
   });
 
-  test("only active tasks count, grouped by domain", () => {
-    const recent = { urgency_anchor_at: new Date().toISOString() };
-    const s = getSummary([
-      task({ ...recent, domain: "physical_somatic", interval_days: 4, effort: 2 }),
-      task({ ...recent, domain: "physical_somatic", interval_days: 4, effort: 2, state: "paused" }),
-      task({ ...recent, domain: "social_relational", interval_days: 10, effort: 3 })
-    ]);
-    assert.equal(s.domain_loads.physical_somatic.current, 0.5);
-    assert.equal(s.domain_loads.social_relational.current, 0.3);
-    assert.equal(s.total_active_cost_au, 0.8);
+  test("domain caps match the brief and sum to the 12 AU baseline", () => {
+    const { domain_loads } = getSummary([]);
+    assert.equal(domain_loads.executive_mental.max, 5);
+    assert.equal(domain_loads.physical_somatic.max, 4);
+    assert.equal(domain_loads.social_relational.max, 3);
+    const sum = Object.values(domain_loads).reduce((n, d) => n + d.max, 0);
+    assert.equal(sum, getSummary([]).effective_capacity_au);
   });
 
+  test("active tasks are grouped by domain using E / T", () => {
+    const recent = { urgency_anchor_at: new Date().toISOString() };
+    const s = getSummary([
+      task({ ...recent, domain: "physical_somatic", interval_days: 4, effort: 1.0 }),
+      task({ ...recent, domain: "social_relational", interval_days: 10, effort: 2.5 })
+    ]);
+    assert.equal(s.domain_loads.physical_somatic.current, 0.25);
+    assert.equal(s.domain_loads.social_relational.current, 0.25);
+    assert.equal(s.total_active_cost_au, 0.5);
+  });
+
+  // Brief todo_states: only active tasks feed urgency, capacity and leaderboard
+  test("frozen, hidden, paused and completed tasks contribute no load or weight", () => {
+    const old = { urgency_anchor_at: new Date(Date.now() - 30 * DAY).toISOString() };
+    for (const state of ["frozen", "hidden", "paused", "completed"]) {
+      const s = getSummary([task({ ...old, state, frozen_at: old.urgency_anchor_at, last_completed_at: old.urgency_anchor_at })]);
+      assert.equal(s.total_weight, 0, state);
+      assert.equal(s.total_active_cost_au, 0, state);
+    }
+  });
+
+  test("once-off tasks load by their ramp, recurring by E / T", () => {
+    const due = { urgency_anchor_at: new Date(Date.now() - 10 * DAY).toISOString(), effort: 2.5 };
+    const s = getSummary([
+      task({ ...due, is_recurring: 0, domain: "physical_somatic" }),
+      task({ ...due, is_recurring: 1, domain: "social_relational" })
+    ]);
+    assert.equal(s.domain_loads.physical_somatic.current, 2.5);
+    assert.equal(s.domain_loads.social_relational.current, 0.25);
+  });
+
+  // Not specified by the brief: tasks outside the three channels still count toward the total.
   test("unknown domains add to total but not to any domain load", () => {
     const s = getSummary([task({ urgency_anchor_at: new Date().toISOString(), domain: "other" })]);
-    assert.equal(s.total_active_cost_au, 0.2);
+    assert.equal(s.total_active_cost_au, 0.1);
     assert.equal(s.domain_loads.executive_mental.current, 0);
   });
 
+  // Not specified by the brief (it replaces capacity sliders with vacations): legacy energy_factor.
   test("energy factor is clamped between 0.1 and 1", () => {
     assert.equal(getSummary([], 0.5).effective_capacity_au, 6);
     assert.equal(getSummary([], 0).effective_capacity_au, 1.2);

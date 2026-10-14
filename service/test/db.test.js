@@ -3,6 +3,7 @@ process.env.TASKIFY_DB = ":memory:";
 const { test, describe, beforeEach, afterEach, mock } = require("node:test");
 const assert = require("node:assert/strict");
 const db = require("../src/db");
+const { getMetrics } = require("../src/engine");
 
 const T0 = Date.parse("2026-01-01T00:00:00.000Z");
 const DAY = 86400000;
@@ -75,6 +76,13 @@ describe("updateTask", () => {
     assert.equal(b.urgency_anchor_at, iso(T0));
     assert.equal(b.last_completed_at, null);
   });
+  // Brief: last_completed_at is reserved for completions; once-off backdating in createTask leaves it null,
+  // but updateTask sets it regardless of is_recurring.
+  test("updateTask days_ago treats once-off tasks like createTask does", { todo: true }, () => {
+    const t = db.createTask({ title: "a", is_recurring: false });
+    const u = db.updateTask(t.id, { days_ago: 3 });
+    assert.equal(u.last_completed_at, null);
+  });
 });
 
 describe("completeTask", () => {
@@ -94,6 +102,19 @@ describe("completeTask", () => {
     assert.equal(c.state, "completed");
     assert.equal(c.urgency_anchor_at, t.urgency_anchor_at);
     assert.equal(c.last_completed_at, iso(T0));
+  });
+
+  test("recurring completion records a log entry and resets the clock to x = 0", () => {
+    const t = db.createTask({ title: "a", interval_days: 5, days_ago: 9 });
+    const c = db.completeTask(t.id);
+    assert.equal(getMetrics(c, Date.now()).x, 0);
+  });
+
+  test("once-off completion halts the clock at completion time", () => {
+    const t = db.createTask({ title: "a", interval_days: 10, days_ago: 4, is_recurring: false });
+    const c = db.completeTask(t.id);
+    setNow(T0 + 50 * DAY);
+    assert.equal(getMetrics(c, Date.now()).elapsedDays, 4);
   });
 
   test("returns null for unknown or non-active tasks", () => {
@@ -121,20 +142,42 @@ describe("setTaskState", () => {
     assert.equal(thawed.urgency_anchor_at, iso(T0 - 4 * DAY + 3 * DAY));
   });
 
-  test("leaving paused restarts the clock", () => {
+  test("leaving paused restarts the clock and records no completion", () => {
     const t = db.createTask({ title: "a", days_ago: 4 });
     db.setTaskState(t.id, "paused");
     setNow(T0 + 2 * DAY);
-    assert.equal(db.setTaskState(t.id, "active").urgency_anchor_at, iso(T0 + 2 * DAY));
+    const r = db.setTaskState(t.id, "active");
+    assert.equal(r.urgency_anchor_at, iso(T0 + 2 * DAY));
+    assert.equal(r.last_completed_at, t.last_completed_at);
+    assert.equal(db.exportData().completions.length, 0);
   });
 
-  test("reopening a completed task restarts the clock", () => {
+  test("hidden time still counts: returning to active keeps the original anchor", () => {
+    const t = db.createTask({ title: "a", days_ago: 4 });
+    db.setTaskState(t.id, "hidden");
+    setNow(T0 + 6 * DAY);
+    const r = db.setTaskState(t.id, "active");
+    assert.equal(r.urgency_anchor_at, t.urgency_anchor_at);
+    assert.equal(getMetrics(r, T0 + 6 * DAY).elapsedDays, 10);
+  });
+
+  test("time spent frozen does not advance urgency", () => {
+    const t = db.createTask({ title: "a", days_ago: 4 });
+    const before = getMetrics(db.setTaskState(t.id, "frozen"), T0).elapsedDays;
+    setNow(T0 + 30 * DAY);
+    assert.equal(getMetrics(db.getTaskById(t.id), T0 + 30 * DAY).elapsedDays, before);
+    const thawed = db.setTaskState(t.id, "active");
+    assert.equal(getMetrics(thawed, T0 + 30 * DAY).elapsedDays, before);
+  });
+
+  test("reopening a completed task restarts the clock and records no new completion", () => {
     const t = db.createTask({ title: "a", is_recurring: false });
     db.completeTask(t.id);
     setNow(T0 + DAY);
     const r = db.setTaskState(t.id, "active");
     assert.equal(r.state, "active");
     assert.equal(r.urgency_anchor_at, iso(T0 + DAY));
+    assert.equal(db.exportData().completions.length, 1);
   });
 });
 
