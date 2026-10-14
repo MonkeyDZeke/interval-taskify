@@ -510,7 +510,7 @@ implementation_status:
       location: "service/src/db.js, service/src/routes.js"
     - id: "BUG-2"
       title: "Effort is not validated against the effort presets"
-      detail: "Any numeric effort is accepted, including 0 and negative values. Only 0.5, 1.0 and 2.5 are defined by effort_levels."
+      detail: "Non-preset effort values are not rejected: createTask defaults 0 to 1.0 but accepts negative values, while updateTask accepts both 0 and negative values. Only 0.5, 1.0 and 2.5 are defined by effort_levels."
       location: "service/src/db.js, service/src/routes.js"
     - id: "BUG-3"
       title: "Once-off task handling differs between create and update"
