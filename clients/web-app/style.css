@@ -55,7 +55,9 @@ input[type=text], input[type=number], select, button {
 #title, #search { height: 40px; padding: 0 12px; }
 #search { flex: 1; min-width: 0; }
 #search.invalid { border-color: var(--neg); }
-#open-add-btn, #add-btn, #update-btn, #cancel-btn { height: 40px; padding: 0 16px; }
+#open-add-btn, #add-btn, #update-btn, #cancel-btn, #delete-btn { height: 40px; padding: 0 16px; }
+button.danger { color: var(--neg); border-color: var(--neg); }
+button.danger:hover, button.danger.armed { background: var(--neg); color: #fff; }
 input[type=number] { width: 72px; }
 
 .overlay {

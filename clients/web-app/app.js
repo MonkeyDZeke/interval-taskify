@@ -69,7 +69,7 @@ const $ = (id) => document.getElementById(id);
 const el = {
   search: $("search"), searchRegex: $("search-regex"), openAdd: $("open-add-btn"),
   overlay: $("overlay"), overlayBackdrop: $("overlay-backdrop"), overlayHeading: $("overlay-heading"),
-  title: $("title"), add: $("add-btn"), update: $("update-btn"), cancel: $("cancel-btn"),
+  title: $("title"), add: $("add-btn"), update: $("update-btn"), cancel: $("cancel-btn"), del: $("delete-btn"),
   interval: $("interval"), intervalLabel: $("interval-label"), daysLabel: $("days-label"),
   daysAgo: $("days-ago"), daysAgoLabel: $("days-ago-label"),
   significance: $("significance"), effort: $("effort"), domain: $("domain"), once: $("once"),
@@ -127,6 +127,31 @@ async function saveEditingTodo() {
   } catch { /* keep editing */ }
 }
 
+let deleteArmTimer = null;
+
+function disarmDelete() {
+  clearTimeout(deleteArmTimer);
+  deleteArmTimer = null;
+  el.del.textContent = "Delete";
+  el.del.classList.remove("armed");
+}
+
+async function deleteEditingTodo() {
+  if (!editingTodo) return;
+  if (!deleteArmTimer) {
+    el.del.textContent = "Click again to confirm";
+    el.del.classList.add("armed");
+    deleteArmTimer = setTimeout(disarmDelete, 3000);
+    return;
+  }
+  disarmDelete();
+  try {
+    await api.deleteTask(editingTodo.id);
+    closeOverlay();
+    await loadTodos();
+  } catch { /* keep editing */ }
+}
+
 function openOverlay(todo) {
   setEditing(todo);
   el.overlay.classList.add("open");
@@ -145,6 +170,7 @@ const isOverlayOpen = () => el.overlay.classList.contains("open");
 
 function setEditing(todo) {
   editingTodo = todo;
+  disarmDelete();
   if (todo) {
     el.title.value = todo.title;
     el.interval.value = Number(todo.interval_days) || 7;
@@ -176,6 +202,7 @@ function updateFormVisibility() {
   el.daysAgoLabel.hidden = once;
   el.add.hidden = editingTodo !== null;
   el.update.hidden = editingTodo === null;
+  el.del.hidden = editingTodo === null;
   el.overlayHeading.textContent = editingTodo ? "Edit task" : "New task";
   el.title.placeholder = editingTodo ? "Edit task title..." : "Add a task...";
 }
@@ -342,11 +369,10 @@ function renderItem(todo) {
     li.append(iconButton("↩", "Reopen task (restarts urgency clock)", () => act(() => api.setTaskState(todo.id, "active"))));
   }
 
+  li.append(iconButton("✎", "Edit task", () => openOverlay(todo)));
   if (active) {
-    li.append(iconButton("✎", "Edit task", () => openOverlay(todo)));
     li.append(iconButton("✔", "Mark complete", () => act(() => api.completeTask(todo.id))));
   }
-  li.append(iconButton("🗑", "Delete task", () => act(() => api.deleteTask(todo.id))));
   return li;
 }
 
@@ -376,6 +402,7 @@ el.title.addEventListener("keydown", (e) => {
 });
 el.add.addEventListener("click", addTodo);
 el.update.addEventListener("click", saveEditingTodo);
+el.del.addEventListener("click", deleteEditingTodo);
 el.cancel.addEventListener("click", closeOverlay);
 el.overlayBackdrop.addEventListener("click", closeOverlay);
 el.openAdd.addEventListener("click", () => openOverlay(null));
