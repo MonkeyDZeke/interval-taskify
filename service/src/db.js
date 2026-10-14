@@ -2,13 +2,18 @@ const { DatabaseSync } = require("node:sqlite");
 const path = require("path");
 const fs = require("fs");
 
-const dataDir = path.join(__dirname, "../data");
-if (!fs.existsSync(dataDir)) {
-  fs.mkdirSync(dataDir, { recursive: true });
+// TASKIFY_DB overrides the database location (":memory:" is used by tests).
+let dbPath = process.env.TASKIFY_DB;
+if (!dbPath) {
+  const dataDir = path.join(__dirname, "../data");
+  if (!fs.existsSync(dataDir)) {
+    fs.mkdirSync(dataDir, { recursive: true });
+  }
+  dbPath = path.join(dataDir, "tasks.db");
 }
 
-const db = new DatabaseSync(path.join(dataDir, "tasks.db"));
-db.exec("PRAGMA journal_mode = WAL;");
+const db = new DatabaseSync(dbPath);
+if (dbPath !== ":memory:") db.exec("PRAGMA journal_mode = WAL;");
 
 // Database initialization
 db.exec(`
