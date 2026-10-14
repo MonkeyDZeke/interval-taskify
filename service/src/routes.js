@@ -62,7 +62,7 @@ router.get("/tasks/:id", (req, res) => {
 
 // POST /api/v1/tasks - Create task
 router.post("/tasks", (req, res) => {
-  if (!req.body.title || req.body.title.trim() === "") {
+  if (typeof req.body.title !== "string" || req.body.title.trim() === "") {
     return res.status(400).json({ error: "Title is required" });
   }
   const task = db.createTask(req.body);

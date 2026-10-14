@@ -44,6 +44,7 @@ describe("POST /tasks", () => {
   test("rejects missing or blank title", async () => {
     assert.equal((await call("POST", "/api/v1/tasks", {})).status, 400);
     assert.equal((await call("POST", "/api/v1/tasks", { title: "   " })).status, 400);
+    assert.equal((await call("POST", "/api/v1/tasks", { title: 1 })).status, 400);
   });
 });
 
