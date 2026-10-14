@@ -15,10 +15,36 @@
   <main id="app">
     <header class="header">
       <div class="row">
+        <input id="search" type="text" placeholder="Search tasks..." autocomplete="off" aria-label="Search tasks">
+        <label class="check" title="Treat the search text as a regular expression">
+          <input id="search-regex" type="checkbox"> Regex
+        </label>
+        <button id="open-add-btn" class="primary">Add</button>
+      </div>
+
+      <div class="row filters">
+        <button data-filter="all"></button>
+        <button data-filter="active"></button>
+        <button data-filter="inactive"></button>
+        <button data-filter="completed"></button>
+        <span class="spacer"></span>
+        <button id="export-btn" title="Copy full JSON data backup from service">Export</button>
+        <span id="status" class="small offline">● Offline (Cached)</span>
+      </div>
+    </header>
+
+    <div id="summary" class="summary small"></div>
+
+    <ul id="list" class="list"></ul>
+  </main>
+
+  <div id="overlay" class="overlay" aria-hidden="true">
+    <div class="overlay-backdrop" id="overlay-backdrop"></div>
+    <section class="overlay-panel" role="dialog" aria-modal="true" aria-labelledby="overlay-heading">
+      <h2 id="overlay-heading" class="overlay-heading">New task</h2>
+
+      <div class="row">
         <input id="title" type="text" placeholder="Add a task..." autocomplete="off">
-        <button id="add-btn" class="primary">Add</button>
-        <button id="update-btn" class="primary" hidden>Update</button>
-        <button id="cancel-btn" hidden>Cancel</button>
       </div>
 
       <div class="row">
@@ -49,23 +75,16 @@
         <label class="check" title="Task completes permanently instead of recurring">
           <input id="once" type="checkbox"> Once-off
         </label>
-        <button id="export-btn" title="Copy full JSON data backup from service">Export</button>
       </div>
 
-      <div class="row filters">
-        <button data-filter="all"></button>
-        <button data-filter="active"></button>
-        <button data-filter="inactive"></button>
-        <button data-filter="completed"></button>
+      <div class="row actions">
         <span class="spacer"></span>
-        <span id="status" class="small offline">● Offline (Cached)</span>
+        <button id="cancel-btn">Cancel</button>
+        <button id="add-btn" class="primary">Add</button>
+        <button id="update-btn" class="primary" hidden>Update</button>
       </div>
-    </header>
-
-    <div id="summary" class="summary small"></div>
-
-    <ul id="list" class="list"></ul>
-  </main>
+    </section>
+  </div>
 
   <script src="env.js"></script>
   <script src="app.js"></script>

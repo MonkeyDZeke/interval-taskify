@@ -62,9 +62,13 @@ let summaryData = null;
 let serverOnline = false;
 let currentFilter = "active";
 let editingTodo = null;
+let searchText = "";
+let searchRegex = false;
 
 const $ = (id) => document.getElementById(id);
 const el = {
+  search: $("search"), searchRegex: $("search-regex"), openAdd: $("open-add-btn"),
+  overlay: $("overlay"), overlayBackdrop: $("overlay-backdrop"), overlayHeading: $("overlay-heading"),
   title: $("title"), add: $("add-btn"), update: $("update-btn"), cancel: $("cancel-btn"),
   interval: $("interval"), intervalLabel: $("interval-label"), daysLabel: $("days-label"),
   daysAgo: $("days-ago"), daysAgoLabel: $("days-ago-label"),
@@ -108,9 +112,9 @@ async function addTodo() {
   if (!text) return;
   try {
     await api.addTask(text, readConfig());
-    el.title.value = "";
+    closeOverlay();
     await loadTodos();
-  } catch { /* keep input for retry */ }
+  } catch { /* keep overlay open for retry */ }
 }
 
 async function saveEditingTodo() {
@@ -118,10 +122,26 @@ async function saveEditingTodo() {
   if (!editingTodo || !text) return;
   try {
     await api.updateTask(editingTodo.id, text, readConfig());
-    setEditing(null);
+    closeOverlay();
     await loadTodos();
   } catch { /* keep editing */ }
 }
+
+function openOverlay(todo) {
+  setEditing(todo);
+  el.overlay.classList.add("open");
+  el.overlay.setAttribute("aria-hidden", "false");
+  el.title.focus();
+}
+
+function closeOverlay() {
+  el.overlay.classList.remove("open");
+  el.overlay.setAttribute("aria-hidden", "true");
+  setEditing(null);
+  if (el.overlay.contains(document.activeElement)) document.activeElement.blur();
+}
+
+const isOverlayOpen = () => el.overlay.classList.contains("open");
 
 function setEditing(todo) {
   editingTodo = todo;
@@ -139,6 +159,7 @@ function setEditing(todo) {
   } else {
     el.title.value = "";
     el.interval.value = 7;
+    el.daysAgo.value = 0;
     el.once.checked = false;
     el.significance.selectedIndex = 0;
     el.effort.selectedIndex = 1;
@@ -155,7 +176,7 @@ function updateFormVisibility() {
   el.daysAgoLabel.hidden = once;
   el.add.hidden = editingTodo !== null;
   el.update.hidden = editingTodo === null;
-  el.cancel.hidden = editingTodo === null;
+  el.overlayHeading.textContent = editingTodo ? "Edit task" : "New task";
   el.title.placeholder = editingTodo ? "Edit task title..." : "Add a task...";
 }
 
@@ -208,8 +229,27 @@ function matchesFilter(todo, filter) {
   return false;
 }
 
+// Returns a predicate for the search box; null means "no filtering".
+// An invalid regex also yields null so the list stays visible while typing.
+function buildSearchMatcher() {
+  el.search.classList.remove("invalid");
+  if (!searchText) return null;
+  if (searchRegex) {
+    try {
+      const re = new RegExp(searchText, "i");
+      return (todo) => re.test(todo.title);
+    } catch {
+      el.search.classList.add("invalid");
+      return null;
+    }
+  }
+  const needle = searchText.toLowerCase();
+  return (todo) => todo.title.toLowerCase().includes(needle);
+}
+
 function getFilteredTodos() {
-  return todos.filter((t) => matchesFilter(t, currentFilter)).sort((l, r) => {
+  const matchesSearch = buildSearchMatcher();
+  return todos.filter((t) => matchesFilter(t, currentFilter) && (!matchesSearch || matchesSearch(t))).sort((l, r) => {
     const la = l.state === "active";
     const ra = r.state === "active";
     if (la !== ra) return la ? -1 : 1;
@@ -303,7 +343,7 @@ function renderItem(todo) {
   }
 
   if (active) {
-    li.append(iconButton("✎", "Edit task", () => setEditing(todo)));
+    li.append(iconButton("✎", "Edit task", () => openOverlay(todo)));
     li.append(iconButton("✔", "Mark complete", () => act(() => api.completeTask(todo.id))));
   }
   li.append(iconButton("🗑", "Delete task", () => act(() => api.deleteTask(todo.id))));
@@ -336,8 +376,16 @@ el.title.addEventListener("keydown", (e) => {
 });
 el.add.addEventListener("click", addTodo);
 el.update.addEventListener("click", saveEditingTodo);
-el.cancel.addEventListener("click", () => setEditing(null));
+el.cancel.addEventListener("click", closeOverlay);
+el.overlayBackdrop.addEventListener("click", closeOverlay);
+el.openAdd.addEventListener("click", () => openOverlay(null));
 el.once.addEventListener("change", updateFormVisibility);
+document.addEventListener("keydown", (e) => {
+  if (e.key === "Escape" && isOverlayOpen()) closeOverlay();
+});
+
+el.search.addEventListener("input", () => { searchText = el.search.value.trim(); render(); });
+el.searchRegex.addEventListener("change", () => { searchRegex = el.searchRegex.checked; render(); });
 
 document.querySelectorAll("[data-filter]").forEach((b) =>
   b.addEventListener("click", () => { currentFilter = b.dataset.filter; render(); }));
