@@ -36,9 +36,9 @@ test("health check", async () => {
 
 describe("POST /tasks", () => {
   test("creates a task with metrics", async () => {
-    const r = await call("POST", "/api/v1/tasks", { title: "A", interval_days: 10, days_ago: 10, significance: 5 });
+    const r = await call("POST", "/api/v1/tasks", { title: "A", interval_days: 10, days_ago: 10,     significance: 4.0 });
     assert.equal(r.status, 201);
-    assert.equal(r.body.task.metrics.weight, 5);
+        assert.equal(r.body.task.metrics.weight, 4);
   });
 
   test("rejects missing or blank title", async () => {
@@ -79,6 +79,35 @@ describe("GET /tasks", () => {
     assert.deepEqual(await titles("?filter=all"), ["active-phys", "done", "paused"]);
     assert.deepEqual(await titles("?domain=physical_somatic"), ["active-phys"]);
     assert.ok(a.id);
+  });
+});
+
+describe("tiers via the API", () => {
+  const TIERS = [1.0, 1.6, 2.5, 4.0];
+
+  test("equally overdue tasks are ranked by tier, highest first", async () => {
+    for (const significance of TIERS) {
+      await create({ title: `S${significance}`, interval_days: 10, days_ago: 10, significance });
+    }
+    const r = await call("GET", "/api/v1/tasks");
+    assert.deepEqual(r.body.tasks.map(t => t.significance), [4.0, 2.5, 1.6, 1.0]);
+    assert.deepEqual(r.body.tasks.map(t => t.metrics.weight), [4, 2.5, 1.6, 1]);
+  });
+
+  test("a heavily overdue tier 1 task outranks an on-time tier 4 task", async () => {
+    await create({ title: "critical", interval_days: 10, days_ago: 10, significance: 4.0 });
+    await create({ title: "routine", interval_days: 10, days_ago: 21, significance: 1.0 });
+    const top = (await call("GET", "/api/v1/tasks/top?limit=1")).body.tasks[0];
+    assert.equal(top.title, "routine");
+  });
+
+  test("actionability sort favours low effort over raw tier", async () => {
+    await create({ title: "heavy-critical", interval_days: 10, days_ago: 10, significance: 4.0, effort: 2.5 });
+    await create({ title: "quick-routine", interval_days: 10, days_ago: 10, significance: 1.0, effort: 0.5 });
+    const r = await call("GET", "/api/v1/tasks?sort=actionability");
+    assert.deepEqual(r.body.tasks.map(t => t.title), ["quick-routine", "heavy-critical"]);
+    const byWeight = await call("GET", "/api/v1/tasks?sort=weight");
+    assert.deepEqual(byWeight.body.tasks.map(t => t.title), ["heavy-critical", "quick-routine"]);
   });
 });
 
