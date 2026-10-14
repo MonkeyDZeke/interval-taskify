@@ -149,6 +149,20 @@ button.primary {
 .item .name.inactive { color: var(--muted); }
 .item .status { cursor: help; }
 .item .status.overdue { color: var(--neg); }
-.item select { width: 112px; }
+.item { position: relative; }
+.state-pop {
+  position: absolute;
+  right: 8px;
+  top: 50%;
+  transform: translateY(-50%);
+  display: flex;
+  gap: 4px;
+  padding: 6px;
+  background: var(--header);
+  border: 1px solid var(--accent);
+  border-radius: 8px;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.5);
+  z-index: 5;
+}
 .item button { background: transparent; border-color: transparent; font-size: 16px; padding: 4px 8px; }
 .item button:hover { border-color: var(--accent); }

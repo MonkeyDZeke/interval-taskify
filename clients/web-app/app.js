@@ -2,11 +2,10 @@
 
 const API_URL = ((window.ENV && window.ENV.API_URL) || "http://localhost:8085/api/v1").replace(/\/+$/, "");
 
-const STATE_OPTIONS = [
-  { text: "Active", value: "active" },
-  { text: "Frozen", value: "frozen" },
-  { text: "Hidden", value: "hidden" },
-  { text: "Paused", value: "paused" },
+const HALT_STATES = [
+  { icon: "⏸", text: "Pause", value: "paused" },
+  { icon: "❄", text: "Freeze", value: "frozen" },
+  { icon: "🛇", text: "Hide", value: "hidden" },
 ];
 
 // ---------- API client ----------
@@ -231,7 +230,10 @@ function getMetrics(todo) {
 }
 
 function getStatusText(todo) {
-  if (todo.state !== "active") return todo.state.toUpperCase();
+  if (todo.state !== "active") {
+    const icon = HALT_STATES.find((h) => h.value === todo.state);
+    return (icon ? icon.icon + " " : "") + todo.state.toUpperCase();
+  }
   const onceTag = todo.is_recurring === 0 ? "  •  Once-off" : "";
   if (todo.metrics && todo.metrics.statusText) {
     return todo.metrics.statusText + "  •  W " + todo.metrics.weight.toFixed(2) + onceTag;
@@ -327,6 +329,24 @@ function iconButton(label, tip, onClick) {
   return b;
 }
 
+function closeStatePopover() {
+  document.querySelectorAll(".state-pop").forEach((p) => p.remove());
+}
+
+function openStatePopover(li, todo) {
+  closeStatePopover();
+  const pop = document.createElement("div");
+  pop.className = "state-pop";
+  for (const h of HALT_STATES) {
+    pop.append(iconButton(h.icon, h.text, () => {
+      closeStatePopover();
+      act(() => api.setTaskState(todo.id, h.value));
+    }));
+  }
+  pop.append(iconButton("✕", "Cancel", closeStatePopover));
+  li.append(pop);
+}
+
 function renderItem(todo) {
   const li = document.createElement("li");
   li.className = "item";
@@ -354,17 +374,10 @@ function renderItem(todo) {
   info.append(name, status);
   li.append(info);
 
-  if (todo.state !== "completed") {
-    const select = document.createElement("select");
-    for (const o of STATE_OPTIONS) {
-      const opt = document.createElement("option");
-      opt.value = o.value;
-      opt.textContent = o.text;
-      select.append(opt);
-    }
-    select.value = todo.state;
-    select.addEventListener("change", () => act(() => api.setTaskState(todo.id, select.value)));
-    li.append(select);
+  if (active) {
+    li.append(iconButton("⏹", "Stop task…", () => openStatePopover(li, todo)));
+  } else if (todo.state !== "completed") {
+    li.append(iconButton("▶", "Restart task", () => act(() => api.setTaskState(todo.id, "active"))));
   } else {
     li.append(iconButton("↩", "Reopen task (restarts urgency clock)", () => act(() => api.setTaskState(todo.id, "active"))));
   }
@@ -387,8 +400,8 @@ function render() {
   el.status.className = "small " + (serverOnline ? "online" : "offline");
   el.summary.textContent = getCapacitySummary();
 
-  // Rebuilding the list would close an open state dropdown, so skip while one is focused
-  if (el.list.contains(document.activeElement) && document.activeElement.tagName === "SELECT") return;
+  // Rebuilding the list would close an open state dialog
+  if (el.list.querySelector(".state-pop")) return;
   const scroll = el.list.scrollTop;
   el.list.replaceChildren(...getFilteredTodos().map(renderItem));
   el.list.scrollTop = scroll;
@@ -408,7 +421,12 @@ el.overlayBackdrop.addEventListener("click", closeOverlay);
 el.openAdd.addEventListener("click", () => openOverlay(null));
 el.once.addEventListener("change", updateFormVisibility);
 document.addEventListener("keydown", (e) => {
-  if (e.key === "Escape" && isOverlayOpen()) closeOverlay();
+  if (e.key !== "Escape") return;
+  if (document.querySelector(".state-pop")) closeStatePopover();
+  else if (isOverlayOpen()) closeOverlay();
+});
+document.addEventListener("click", (e) => {
+  if (!e.target.closest(".state-pop") && !e.target.closest("button[title='Stop task…']")) closeStatePopover();
 });
 
 el.search.addEventListener("input", () => { searchText = el.search.value.trim(); render(); });
