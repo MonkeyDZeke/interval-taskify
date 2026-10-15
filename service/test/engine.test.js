@@ -60,8 +60,9 @@ describe("getMetrics", () => {
     }
   });
 
-  test("log phase rises from 0, is increasing, and gain slows toward x = 1", () => {
-    const w = days => getMetrics(task({ urgency_anchor_at: ago(days) }), NOW).weight;
+  // Brief system_physics: log curve shape on baseline Tier 1 task
+  test("log phase rises from 0, is increasing, and base gain slows toward x = 1", () => {
+    const w = days => getMetrics(task({ significance: 1.0, urgency_anchor_at: ago(days) }), NOW).weight;
     const samples = [0, 2, 4, 6, 8, 10].map(w);
     assert.equal(samples[0], 0);
     for (let i = 1; i < samples.length; i++) assert.ok(samples[i] > samples[i - 1]);
@@ -124,12 +125,12 @@ describe("getMetrics", () => {
     }
   });
 
-  test("once-off cost equals W(x)/S while x <= 1 and is clamped past it, unlike W(x)", () => {
-    const m = getMetrics(task({ is_recurring: 0, significance: 2.5, effort: 1.0, urgency_anchor_at: ago(6) }), NOW);
-    assert.ok(Math.abs(m.dailyCostAu - m.weight / 2.5) < 0.01);
-    const overdue = getMetrics(task({ is_recurring: 0, significance: 2.5, effort: 1.0, urgency_anchor_at: ago(20) }), NOW);
+  test("once-off cost equals W(x) for baseline tier while x <= 1 and is clamped past it", () => {
+    const m = getMetrics(task({ is_recurring: 0, significance: 1.0, effort: 1.0, urgency_anchor_at: ago(6) }), NOW);
+    assert.ok(Math.abs(m.dailyCostAu - m.weight) < 0.01);
+    const overdue = getMetrics(task({ is_recurring: 0, significance: 1.0, effort: 1.0, urgency_anchor_at: ago(20) }), NOW);
     assert.equal(overdue.dailyCostAu, 1);
-    assert.ok(overdue.weight > 2.5);
+    assert.ok(overdue.weight > 1.0);
   });
 
   // Brief partial_completions.actionability_ratio_stability: ROI = W(x) / E
@@ -203,13 +204,45 @@ describe("significance tiers compared", () => {
     }
   });
 
-  test("weight ratio between tiers is constant across time", () => {
-    for (const days of [3, 7, 10, 18]) {
+  test("tier ratio follows dynamic expansion pre-epoch and locks to S post-epoch", () => {
+    // Pre-epoch: ratio relative to Tier 1 is 1.0 + (S - 1.0) * x
+    for (const days of [3, 7]) {
+      const x = days / 10;
       const base = metricsAt(1.0, days).weight;
       TIERS.forEach(s => {
-        assert.ok(Math.abs(metricsAt(s, days).weight / base - s) < 0.02, `S=${s} x=${days / 10}`);
+        const expectedRatio = 1.0 + (s - 1.0) * x;
+        assert.ok(Math.abs(metricsAt(s, days).weight / base - expectedRatio) < 0.02, `S=${s} x=${x}`);
       });
     }
+    // Post-epoch (x >= 1.0): ratio locks to S
+    for (const days of [10, 18]) {
+      const base = metricsAt(1.0, days).weight;
+      TIERS.forEach(s => {
+        assert.ok(Math.abs(metricsAt(s, days).weight / base - s) < 0.02, `S=${s} post-epoch`);
+      });
+    }
+  });
+
+  test("anti-drowning: moderately overdue lower tier outranks high tier that is far from due", () => {
+    const tier4QuarterDue = metricsAt(4.0, 2.5).weight; // x = 0.25 -> W = 0.94
+    const tier1Overdue = metricsAt(1.0, 15).weight;     // x = 1.50 -> W = 2.00
+    assert.ok(tier1Overdue > tier4QuarterDue, `Tier 1 overdue (${tier1Overdue}) should beat Tier 4 at x=0.25 (${tier4QuarterDue})`);
+  });
+
+  test("anti-drowning: scenario test with long-interval high tiers vs overdue routine task", () => {
+    // Task A: Routine (S=1.0, T=15), 2 days overdue (elapsed = 17d, x = 1.13)
+    const taskA = getMetrics(task({ significance: 1.0, interval_days: 15, urgency_anchor_at: ago(17) }), NOW);
+    // Task B: Important (S=2.5, T=21), due in 11 days (elapsed = 10d, x = 0.48)
+    const taskB = getMetrics(task({ significance: 2.5, interval_days: 21, urgency_anchor_at: ago(10) }), NOW);
+    // Task C: Important (S=2.5, T=30), due in 20 days (elapsed = 10d, x = 0.33)
+    const taskC = getMetrics(task({ significance: 2.5, interval_days: 30, urgency_anchor_at: ago(10) }), NOW);
+
+    assert.equal(taskA.weight, 1.20);
+    assert.equal(taskB.weight, 1.25);
+    assert.equal(taskC.weight, 0.92);
+
+    // Task A outranks Task C
+    assert.ok(taskA.weight > taskC.weight, "Overdue routine task A must outrank distant important task C");
   });
 
   test("tier never changes elapsed time or daily cost", () => {
@@ -242,10 +275,17 @@ describe("significance tiers compared", () => {
     }
   });
 
-  test("a higher tier that is not yet due still outranks a lower tier moderately overdue", () => {
-    const tier4Half = metricsAt(4.0, 5).weight;
-    assert.ok(tier4Half > metricsAt(1.0, 15).weight);
-    assert.ok(tier4Half > metricsAt(1.6, 13).weight);
+
+
+  // Dynamic significance keeps higher tiers strictly increasing across 0 <= x <= 1
+  test("higher tier weights remain strictly increasing across 0 <= x <= 1", () => {
+    for (const S of [1.6, 2.5, 4.0]) {
+      const w = days => getMetrics(task({ significance: S, urgency_anchor_at: ago(days) }), NOW).weight;
+      const samples = [0, 2, 4, 6, 8, 10].map(w);
+      for (let i = 1; i < samples.length; i++) {
+        assert.ok(samples[i] > samples[i - 1], `S=${S} failed monotonic increase at step ${i}`);
+      }
+    }
   });
 
   test("a fresh task has zero weight regardless of tier", () => {
