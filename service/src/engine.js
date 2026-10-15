@@ -30,10 +30,10 @@ function getMetrics(task, nowMs = Date.now()) {
   const elapsedDays = Math.max(0, (effectiveNowMs - anchorMs) / 86400000);
   const x = elapsedDays / intervalDays;
 
-  // W(x): Logarithmic phase (x <= 1) vs. Exponential phase (x > 1)
+  // W(x): Logarithmic phase with dynamic pre-epoch scaling (x <= 1) vs. Exponential phase (x > 1)
   const ramp = Math.log(1.0 + A * Math.min(x, 1.0)) / Math.log(1.0 + A);
   const weight = x <= 1.0
-    ? significance * ramp
+    ? (1.0 + (significance - 1.0) * x) * ramp
     : significance * Math.exp(B * (x - 1.0));
 
   // Recurring: steady E/T. Once-off: ramps toward the daily-equivalent peak E, held when overdue.

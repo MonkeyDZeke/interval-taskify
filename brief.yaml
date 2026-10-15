@@ -36,10 +36,17 @@ system_physics:
   # ----------------------------------------------------------------------------
   # DYNAMIC URGENCY WEIGHT EQUATIONS W(x)
   # Uses S_effective which combines base significance, progress multiplier (R),
-  # deferment debuffs, and vacation multipliers.
+  # deferment debuffs, vacation multipliers, and dynamic pre-epoch significance
+  # to prevent long-interval, high-significance tasks from drowning out shorter-interval, lower-stakes tasks.
   # ----------------------------------------------------------------------------
   urgency_weight:
     effective_significance_formula: "S_effective = R * S_deferment_debuff * S_vacation_multiplier"
+
+    logarithmic_phase:
+      condition: "0 <= x <= 1"
+      equation: "W(x) = [ 1.0 + (S_effective - 1.0) * x ] * ( ln(1 + a * x) / ln(1 + a) )"
+      behavior: "Smoothly rises from 0 to S_effective. Scales significance dynamically from baseline 1.0 up to S_effective at x = 1 to prevent early leaderboard drowning."
+
     logarithmic_phase:
       condition: "0 <= x <= 1"
       equation: "W(x) = S_effective * ( ln(1 + a * x) / ln(1 + a) )"
@@ -443,6 +450,7 @@ implementation_status:
       - { feature: "Time normalization x = delta_t / T", done: true }
       - { feature: "Logarithmic phase W(x) for 0 <= x <= 1 (a = 10)", done: true }
       - { feature: "Exponential phase W(x) for x > 1 (b = 1.386)", done: true }
+      - { feature: "Pre-epoch dynamic significance scaling", done: true }
       - { feature: "Actionability ratio W(x) / E", done: true }
       - { feature: "Significance tiers 1.0 / 1.6 / 2.5 / 4.0 used as base S", done: true }
       - { feature: "Significance tier validation (reject non-tier values)", done: true }
