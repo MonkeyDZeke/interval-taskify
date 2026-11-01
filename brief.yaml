@@ -531,9 +531,9 @@ implementation_status:
     due_proximity:
       - { feature: "dueOffsetMs (signed ms) exposed by engine.getMetrics, respecting frozen/completed clocks", done: true }
       - { feature: "GET /api/v1/tasks?sort=due (composable with filter, domain, limit; absolute due proximity sort)", done: true }
-      - { feature: "Web app Due filter button (active tasks, sorted by abs(dueOffsetMs) instead of weight, with offline fallback)", done: false }
-      - { feature: "Plasma widget Due button (same membership and sort rules)", done: false }
-      - { feature: "CLI: taskify ls --due (uses filter=active&sort=due)", done: false }
+      - { feature: "Web app Due filter button (active tasks, sorted by abs(dueOffsetMs) instead of weight, with offline fallback)", done: true }
+      - { feature: "Plasma widget Due button (same membership and sort rules)", done: true }
+      - { feature: "CLI: taskify ls --due (uses filter=active&sort=due)", done: true }
 
     service_api:
       - { feature: "Task CRUD, complete, and state change endpoints", done: true }
