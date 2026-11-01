@@ -188,6 +188,44 @@ describe("getMetrics", () => {
     assert.equal(text(11), "Overdue 1 day");
     assert.equal(text(15), "Overdue 5 days");
   });
+
+  test("dueOffsetMs is 0 for due today, positive for future, negative for overdue (using ms scale)", () => {
+    const DAY = 86400000;
+    const dueToday = getMetrics(task({ interval_days: 10, urgency_anchor_at: ago(10) }), NOW);
+    assert.equal(dueToday.dueOffsetMs, 0);
+
+    const future2 = getMetrics(task({ interval_days: 10, urgency_anchor_at: ago(8) }), NOW);
+    assert.equal(future2.dueOffsetMs, 2 * DAY);
+
+    const overdue1 = getMetrics(task({ interval_days: 10, urgency_anchor_at: ago(11) }), NOW);
+    assert.equal(overdue1.dueOffsetMs, -1 * DAY);
+  });
+
+  test("dueOffsetMs respects frozen and completed clocks", () => {
+    const DAY = 86400000;
+    const frozen = getMetrics(
+      task({ state: "frozen", urgency_anchor_at: ago(10), frozen_at: ago(5), interval_days: 10 }),
+      NOW
+    );
+    // effective elapsed 5 days, due in 5 days from frozen point
+    assert.equal(frozen.dueOffsetMs, 5 * DAY);
+    assert.equal(frozen.statusText, "FROZEN");
+
+    const completed = getMetrics(
+      task({ state: "completed", is_recurring: 0, urgency_anchor_at: ago(10), last_completed_at: ago(4), interval_days: 10 }),
+      NOW
+    );
+    // effective elapsed 6 days (from ago(4) to ago(10)? wait, last=ago(4) means 4 days ago, anchor 10 days ago, elapsed at complete=6
+    // dueAt = anchor +10d = NOW -0 , but wait calc: anchor=ago(10), last=ago(4) => elapsed at complete =6d, dueOffset at complete = 10-6 =4d future? but since completed clock stops
+    assert.equal(completed.dueOffsetMs, 4 * DAY);
+    assert.equal(completed.statusText, "COMPLETED");
+  });
+
+  test("invalid tasks have dueOffsetMs null", () => {
+    const bad = getMetrics(task({ interval_days: 0, urgency_anchor_at: ago(5) }), NOW);
+    assert.equal(bad.dueOffsetMs, null);
+    assert.equal(bad.statusText, "Invalid");
+  });
 });
 
 describe("significance tiers compared", () => {

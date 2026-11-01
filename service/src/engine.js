@@ -17,7 +17,7 @@ function getMetrics(task, nowMs = Date.now()) {
   const anchorMs = Date.parse(task.urgency_anchor_at);
 
   if (!isFinite(intervalDays) || intervalDays <= 0 || !isFinite(anchorMs)) {
-    return { elapsedDays: 0, x: 0, weight: 0, dailyCostAu: 0, actionability: 0, statusText: "Invalid" };
+    return { elapsedDays: 0, x: 0, weight: 0, dailyCostAu: 0, actionability: 0, statusText: "Invalid", dueOffsetMs: null };
   }
 
   // Frozen and completed tasks hold their clock at the moment the state began
@@ -29,6 +29,11 @@ function getMetrics(task, nowMs = Date.now()) {
 
   const elapsedDays = Math.max(0, (effectiveNowMs - anchorMs) / 86400000);
   const x = elapsedDays / intervalDays;
+
+  // Due offset in ms (positive = future, negative = overdue). Uses same effective clock.
+  // This is the canonical value for sort=due (absolute proximity) and client offline sorting.
+  const dueAt = anchorMs + intervalDays * 86400000;
+  const dueOffsetMs = dueAt - effectiveNowMs;
 
   // W(x): Logarithmic phase with dynamic pre-epoch scaling (x <= 1) vs. Exponential phase (x > 1)
   const ramp = Math.log(1.0 + A * Math.min(x, 1.0)) / Math.log(1.0 + A);
@@ -61,7 +66,8 @@ function getMetrics(task, nowMs = Date.now()) {
     weight: Number(weight.toFixed(2)),
     dailyCostAu: Number(dailyCostAu.toFixed(3)),
     actionability: Number(actionability.toFixed(2)),
-    statusText
+    statusText,
+    dueOffsetMs: Number(dueOffsetMs)
   };
 }
 

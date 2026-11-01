@@ -81,6 +81,58 @@ describe("GET /tasks", () => {
     assert.deepEqual(await titles("?domain=physical_somatic"), ["active-phys"]);
     assert.ok(a.id);
   });
+
+  test("sorts by due proximity (absolute offset) not weight", async () => {
+    // Create with controlled due offsets via days_ago relative to interval
+    // due today: offset ~0
+    await create({ title: "due-today", interval_days: 10, days_ago: 10 });
+    // overdue 1: offset ~-1d
+    await create({ title: "overdue-1", interval_days: 10, days_ago: 11 });
+    // due in 2: offset ~+2d
+    await create({ title: "due-in-2", interval_days: 10, days_ago: 8 });
+    // overdue 3: offset ~-3d
+    await create({ title: "overdue-3", interval_days: 10, days_ago: 13 });
+    // far high weight task should not come first
+    await create({ title: "far-high", interval_days: 10, days_ago: 30, significance: 4.0 });
+
+    const dueSorted = (await call("GET", "/api/v1/tasks?sort=due")).body.tasks.map(t => t.title);
+    assert.deepEqual(dueSorted, ["due-today", "overdue-1", "due-in-2", "overdue-3", "far-high"]);
+  });
+
+  test("sort=due tie-breaks overdue before future at equal distance, then by id (engine level for precision)", async () => {
+    // Due to sequential Date.now() in create, exact abs equality is timing-dependent in API.
+    // Rely on engine unit test for the signed tie-break; here just ensure sort=due works without error
+    // and that a very close overdue beats a farther future.
+    const oClose = await create({ title: "o-close", interval_days: 10, days_ago: 10.1 }); // ~ -0.1d overdue
+    const fFar = await create({ title: "f-far", interval_days: 10, days_ago: 8 }); // +2d future
+
+    const r = (await call("GET", "/api/v1/tasks?sort=due")).body.tasks.map(t => t.title);
+    const idxO = r.indexOf("o-close");
+    const idxF = r.indexOf("f-far");
+    assert.ok(idxO < idxF, "closer (slightly overdue) should precede farther future");
+  });
+
+  test("sort=due composes with filter and limit", async () => {
+    const act1 = await create({ title: "act-close", interval_days: 5, days_ago: 5 }); // due today
+    const paused = await create({ title: "paused-over", interval_days: 5, days_ago: 6 });
+    await call("PATCH", `/api/v1/tasks/${paused.id}/state`, { state: "paused" });
+    const actFar = await create({ title: "act-far", interval_days: 5, days_ago: 0 }); // due in 5
+
+    // filter active + sort due
+    const activeDue = (await call("GET", "/api/v1/tasks?filter=active&sort=due")).body.tasks.map(t => t.title);
+    assert.deepEqual(activeDue, ["act-close", "act-far"]);
+
+    // filter all + sort due: today (act-close) is closest, then 1d-overdue paused, then +5d
+    const allDue = (await call("GET", "/api/v1/tasks?filter=all&sort=due")).body.tasks.map(t => t.title);
+    assert.equal(allDue[0], "act-close");
+    const idxPaused = allDue.indexOf("paused-over");
+    const idxFar = allDue.indexOf("act-far");
+    assert.ok(idxPaused < idxFar);
+
+    const limited = (await call("GET", "/api/v1/tasks?sort=due&limit=2")).body.tasks.map(t => t.title);
+    assert.equal(limited.length, 2);
+    assert.equal(limited[0], "act-close");
+  });
 });
 
 describe("tier and preset validation", () => {

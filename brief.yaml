@@ -1,6 +1,6 @@
 # ==============================================================================
 # DYNAMIC TASK SYSTEM CONFIGURATION & TECHNICAL SPECIFICATION
-# Architecture: Relative Urgency Leaderboard & Cognitive Capacity Tracker
+# Architecture: Relative Urgency Leaderboard, Due Proximity View & Cognitive Capacity Tracker
 # ==============================================================================
 
 system_physics:
@@ -438,9 +438,33 @@ leaderboard_routing:
     description: "Surfaces tasks approaching peak epoch that offer maximum proactive load reduction."
 
 # ==============================================================================
+# DUE PROXIMITY VIEW
+# ==============================================================================
+
+due_proximity_view:
+  description: "Alternative sort of tasks by absolute closeness of their due date to the current time (effective clock), rather than by urgency weight."
+  due_instant: "dueAt = urgency_anchor_at + interval_days * 86400000"
+  effective_clock: "Identical to urgency engine: frozen uses frozen_at, completed uses last_completed_at, else wall-clock now. Paused/hidden use live clock."
+  sort_key:
+    primary: "abs(dueAt - effectiveNow) ascending (today first, then 1-day deviations, then 2, etc.)"
+    secondary: "signed offset ascending (overdue before equally-distant future at same distance)"
+    tertiary: "id ascending for stability"
+  invalid_handling: "Tasks with invalid interval or anchor sort last (dueOffsetMs = null)"
+  metrics_exposure: "getMetrics returns dueOffsetMs (signed milliseconds to due instant, null when invalid). Used for server sort and client offline fallback."
+  api:
+    endpoint: "GET /api/v1/tasks?sort=due"
+    composes_with: "filter (active/inactive/completed/all), domain, limit"
+    note: "No filter=due value; sort=due is orthogonal. Default sort remains weight."
+  client_ui:
+    due_button: "Placed next to All/Active/Inactive/Done. Uses filter=active & sort=due (active tasks only, sorted by due proximity instead of weight)."
+    count: "Matches active count."
+    offline: "Web and Plasma compute abs(dueOffsetMs) from server metrics or local fallback using same clock rules."
+    cli: "taskify ls --due calls /tasks?filter=active&sort=due"
+
+# ==============================================================================
 # IMPLEMENTATION STATUS
-# Tracks which parts of this specification exist in the service (service/src).
-# done: true  = implemented and covered by service tests.
+# Tracks which parts of this specification exist in the service (service/src) and clients.
+# done: true  = implemented and covered by tests.
 # done: false = specified above but not yet implemented.
 # ==============================================================================
 
@@ -504,9 +528,17 @@ implementation_status:
       - { feature: "Dynamic category sampling by load share", done: false }
       - { feature: "Proactive radar bucket (x <= 1.0, sorted by W(x) / S)", done: false }
 
+    due_proximity:
+      - { feature: "dueOffsetMs (signed ms) exposed by engine.getMetrics, respecting frozen/completed clocks", done: true }
+      - { feature: "GET /api/v1/tasks?sort=due (composable with filter, domain, limit; absolute due proximity sort)", done: true }
+      - { feature: "Web app Due filter button (active tasks, sorted by abs(dueOffsetMs) instead of weight, with offline fallback)", done: false }
+      - { feature: "Plasma widget Due button (same membership and sort rules)", done: false }
+      - { feature: "CLI: taskify ls --due (uses filter=active&sort=due)", done: false }
+
     service_api:
       - { feature: "Task CRUD, complete, and state change endpoints", done: true }
       - { feature: "Task list filtering (state, domain), sorting and limit", done: true }
+      - { feature: "due proximity sort via ?sort=due", done: true }
       - { feature: "Summary endpoint with domain loads", done: true }
       - { feature: "Export / import backup with transactional rollback", done: true }
       - { feature: "SQLite persistence with versioned migrations", done: true }

@@ -32,6 +32,21 @@ router.get("/tasks", (req, res) => {
     decorated.sort((a, b) => b.metrics.actionability - a.metrics.actionability);
   } else if (sort === "title") {
     decorated.sort((a, b) => a.title.localeCompare(b.title));
+  } else if (sort === "due") {
+    decorated.sort((a, b) => {
+      const da = a.metrics.dueOffsetMs;
+      const db = b.metrics.dueOffsetMs;
+      const aInvalid = da === null || !isFinite(da);
+      const bInvalid = db === null || !isFinite(db);
+      if (aInvalid && bInvalid) return 0;
+      if (aInvalid) return 1;
+      if (bInvalid) return -1;
+      const absA = Math.abs(da);
+      const absB = Math.abs(db);
+      if (absA !== absB) return absA - absB;
+      if (da !== db) return da - db; // overdue (neg) before future (pos)
+      return a.id - b.id; // stable
+    });
   }
 
   // Limit
