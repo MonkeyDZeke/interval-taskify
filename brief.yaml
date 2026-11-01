@@ -8,54 +8,90 @@ system_physics:
   # TIME NORMALIZATION
   # Real-world meaning: Scale invariance. Ensures a task 1 day late on a 3-day
   # schedule feels mathematically equivalent to a task 1 week late on a 3-week schedule.
+  # T is user-defined per task. No dynamic adjustment of T exists.
   # ----------------------------------------------------------------------------
   time_variable: "x"
   formula_x: "delta_t / T"
   variables:
     delta_t:
       unit: "days"
-      description: "Elapsed wall-clock time since last task completion or activation timestamp."
+      description: "Elapsed wall-clock time since the urgency_anchor_at timestamp (set at creation, recurring completion, pause/completed reactivation, or freeze thaw)."
     T:
       unit: "days"
-      description: "Target urgency interval (user-defined per task or dynamically adjusted)."
+      description: "Target urgency interval (user-defined per task)."
 
   # ----------------------------------------------------------------------------
   # GLOBAL CURVE PARAMETERS
   # Real-world meaning: Universal physics governing task acceleration across the app.
+  # a controls the log shape; b controls overdue acceleration (global, not per-task curve).
   # ----------------------------------------------------------------------------
   a:
     value: 10.0
     description: "Logarithmic early-gain curvature factor (0 <= x <= 1)."
-    behavior: "Reclaims ~75% of base weight S at half-interval (x = 0.5), strongly rewarding early proactive completions."
+    behavior: "For Tier-1 tasks (S_base = 1) with curve = -1, reclaims ~75% of S at half-interval (x = 0.5). Higher tiers receive additional pre-epoch prefactor scaling."
 
   b:
     value: 1.386
     description: "Exponential growth rate factor (x > 1)."
-    behavior: "Doubles task weight (2.0 * S) at 50% overdue (x = 1.5) and quadruples weight (4.0 * S) at 100% overdue (x = 2.0)."
+    behavior: "Doubles task weight (2.0 * S) at 50% overdue (x = 1.5) and quadruples weight (4.0 * S) at 100% overdue (x = 2.0). b is a 3-decimal approximation of ln(4); Tier 4 value is defined as exactly 4.0."
 
   # ----------------------------------------------------------------------------
   # DYNAMIC URGENCY WEIGHT EQUATIONS W(x)
-  # Uses S_effective which combines base significance, progress multiplier (R),
-  # deferment debuffs, vacation multipliers, and dynamic pre-epoch significance
-  # to prevent long-interval, high-significance tasks from drowning out shorter-interval, lower-stakes tasks.
+  # The engine (service/src/engine.js) is the canonical implementation.
+  # Uses S_shaped for stake-based scaling and a separate remaining-work multiplier R.
+  # Pre-epoch dynamic significance scaling prevents long-interval, high-significance
+  # tasks from drowning out shorter-interval, lower-stakes tasks.
   # ----------------------------------------------------------------------------
   urgency_weight:
-    effective_significance_formula: "S_effective = R * S_deferment_debuff * S_vacation_multiplier"
+    # Composition (future multipliers default to 1 until partials, deferment, and
+    # vacations are implemented):
+    #   S_shaped = S_base * M_deferment * M_vacation
+    #   For x <= 1:
+    #     prefactor = 1.0 + (S_shaped - 1.0) * x
+    #     W(x) = R * prefactor * f(min(x, 1), curve)
+    #   For x > 1:
+    #     W(x) = R * S_shaped * e^(b * (x - 1))
+    # R multiplies after the pre-epoch bracket so that ROI = W / E_eff remains
+    # independent of R (actionability ratio stability).
+    stakes_and_remaining_work: "S_shaped = S_base * M_deferment * M_vacation; R scales W and E after the prefactor"
 
-    logarithmic_phase:
+    curve_parameter:
+      name: "curve"
+      type: "float"
+      range: "[-1.0, 1.0]"
+      default: -1.0
+      description: "Per-task shape of the pre-due urgency ramp. Default -1 reproduces current logarithmic behavior for all existing tasks."
+      values:
+        "-1.0": "Logarithmic early-gain (current default). Rewards proactive early completion."
+        "0.0": "Linear (steady rate)."
+        "+1.0": "Late-rise exponential (mirror of the log using the same a). Rewards completion near the goal epoch."
+      ui: "Slider with visual curve illustration. Ends labeled 'Early (call mom)' and 'On time (toenails)'. Middle labeled 'Steady'. Default parked at left end. Editable on existing tasks."
+
+    shape_function:
+      definition: |
+        Let L(x) = ln(1 + a * x) / ln(1 + a) for 0 <= x <= 1 (a = 10).
+        Let E(x) = 1 - L(1 - x).
+        f(x, c) =
+          if c <= 0:
+            t = -c
+            f = t * L(x) + (1 - t) * x
+          else:
+            t = c
+            f = t * E(x) + (1 - t) * x
+      properties: "f(0, c) = 0, f(1, c) = 1 for all c. Strictly increasing. Continuous in x and c. At c = -1 reproduces today's L(x) exactly."
+
+    pre_due_phase:
       condition: "0 <= x <= 1"
-      equation: "W(x) = [ 1.0 + (S_effective - 1.0) * x ] * ( ln(1 + a * x) / ln(1 + a) )"
-      behavior: "Smoothly rises from 0 to S_effective. Scales significance dynamically from baseline 1.0 up to S_effective at x = 1 to prevent early leaderboard drowning."
+      equation: "W(x) = R * [1.0 + (S_shaped - 1.0) * x] * f(min(x, 1), curve)"
+      behavior: "Smooth rise from 0. Pre-epoch linear significance scaling prevents early drowning by high-S tasks. Shape f controls early vs late reward. At x = 1, W = R * S_shaped regardless of curve."
 
-    logarithmic_phase:
-      condition: "0 <= x <= 1"
-      equation: "W(x) = S_effective * ( ln(1 + a * x) / ln(1 + a) )"
-      behavior: "Smoothly rises from 0 to S_effective. Gain rate slows near x = 1."
-
-    exponential_phase:
+    overdue_phase:
       condition: "x > 1"
-      equation: "W(x) = S_effective * e^(b * (x - 1))"
-      behavior: "Accelerates rapidly past S_effective, forcing long-neglected items to rise."
+      equation: "W(x) = R * S_shaped * e^(b * (x - 1))"
+      behavior: "Accelerates rapidly. Overdue growth is global (independent of per-task curve) to preserve the Tier-4-at-epoch = Tier-1-at-x=2 invariant for any curve value."
+      note: "b = 1.386 is a 3-decimal approximation of ln(4). Tier 4 is defined as exactly 4.0. Equality at x=2 holds within existing test tolerance (~0.01)."
+
+    tier_1_half_interval_note: "For S_base = 1.0 and curve = -1, L(0.5) ≈ 0.747. Higher tiers at x = 0.5 receive additional scaling from the prefactor and are not 75% of their S."
 
 # ==============================================================================
 # TASK PARAMETERS, RECURRENCE & BOUNDARIES
@@ -77,15 +113,37 @@ recurrence_and_lifecycle:
       recurring_false:
         action: "Mark full completion timestamp, reset accumulated_progress = 0.0, halt urgency clock."
         target_state: "completed"
-        description: "Task transitions to terminal completed state permanently."
+        description: "Task transitions to completed state. Clock is held at last_completed_at (set by completeTask for once-offs). Reactivation is supported and resets the anchor."
     capacity_handler:
       recurring_true: "Daily load C_i = E_i / T_i (constant)."
       recurring_false: "Daily load ramps with proximity to due date per domains_and_capacity.once_off_cost_formula, peaking at E_i (daily-task equivalent) when due or overdue."
 
-significance_tiers:
   # ----------------------------------------------------------------------------
-  # SIGNIFICANCE (S) - DRIVES LEADERBOARD RANKING ONLY
+  # ONCE-OFF URGENCY DIAL (curve_start)
+  # Applies only when is_recurring = false. Does not move the calendar due date.
+  # ----------------------------------------------------------------------------
+  curve_start:
+    type: "float"
+    range: "[0.0, 1.0]"
+    default: 0.0
+    applies_to: "once-off tasks only (engine ignores for recurring)"
+    description: "Starting position along the urgency curve at creation (or edit). 0 = normal ramp from now. 1.0 = starts at full due-date weight (W = S_shaped) immediately, while the due date remains 'interval_days from anchor'."
+    semantics: |
+      x = curve_start + (1 - curve_start) * (elapsed / T)   while elapsed <= T
+      x = 1 + (elapsed - T) / T                              once overdue
+    effect_on_due: "dueOffsetMs and 'Due in N days' status text are always calendar-based (anchor + T). The dial affects weight and once-off capacity only."
+    ui: "0-100% dial. Shown only when Once-off is checked. Rendered as a marker on the curve illustration from the curve slider. Readout shows resulting starting weight %."
+    edit_behavior: "Editable. Changing curve_start does not change urgency_anchor_at or the due date."
+    reactivation: "Pause or completed reactivation resets elapsed (anchor = now) but preserves curve_start. The task returns to its dialed position on the curve, not to 0."
+    capacity: "Once-off daily cost uses the composed x: C = E * f(x, curve) for x <= 1 (clamped at E after due). A 100% dial consumes full peak capacity immediately."
+    days_ago_interaction: "days_ago (backdating) and curve_start are distinct. days_ago moves the due date. The dial does not. UI clients hide days_ago for once-off; sending both via API is advanced usage."
+    default_preservation: "Default 0.0 ensures all pre-dial once-off tasks behave exactly as before."
+
+  significance_tiers:
+  # ----------------------------------------------------------------------------
+  # SIGNIFICANCE (S) - DRIVES WEIGHT AND ACTIONABILITY RANKING
   # Real-world meaning: Consequence/stakes of ignoring a task.
+  # Does NOT drive capacity load (effort does). Does drive W and therefore actionability (W/E).
   # Mathematical bound: Bound typically to exponential factor b so a Tier 4 task
   # at epoch (x=1) equals a Tier 1 task that is exactly 1 interval overdue (x=2).
   # ----------------------------------------------------------------------------
@@ -110,10 +168,9 @@ significance_tiers:
 
 effort_levels:
   # ----------------------------------------------------------------------------
-  # EFFORT MULTIPLIER (E) - DRIVES CAPACITY CONSUMPTION ONLY
+  # EFFORT (E) - DRIVES CAPACITY CONSUMPTION AND ACTIONABILITY (W/E)
   # Real-world meaning: Physical/Cognitive friction required to perform the task.
-  # Disentangled from Significance (S) to prevent high-stakes easy tasks from
-  # artificially exhausting capacity budgets.
+  # Does not drive weight W. Does drive actionability (W/E) and daily load.
   # ----------------------------------------------------------------------------
   presets:
     quick:
@@ -144,13 +201,13 @@ todo_states:
       urgency_clock_behavior: "Continue advancing as if the todo were active."
       on_return_to_active: "Calculate urgency using the full elapsed time, including time spent hidden."
     paused:
-      description: "Excluded from calculations and the leaderboard."
-      urgency_clock_behavior: "Do not calculate urgency while paused."
-      on_return_to_active: "Reset the urgency anchor to the reactivation time so x = 0; do not record a completion event."
+      description: "Excluded from summary, leaderboard, and default active list."
+      urgency_clock_behavior: "getMetrics still computes using wall time while paused, but the value is discarded on reactivation."
+      on_return_to_active: "Reset the urgency anchor to the reactivation time so elapsed starts from 0; do not record a completion event. curve_start (if once-off) is preserved."
     completed:
-      description: "Terminal state for non-recurring singletons (is_recurring: false) after 100% completion."
-      urgency_clock_behavior: "Clock stopped permanently. Excluded from urgency, capacity, leaderboard, and routing calculations."
-      on_return_to_active: "If un-completed or reactivated manually, reset urgency anchor to current timestamp (delta_t = 0) and progress = 0.0."
+      description: "Terminal state reached via completeTask (primarily once-off). Clock hold requires last_completed_at to be set."
+      urgency_clock_behavior: "If last_completed_at is set, getMetrics holds the clock at that instant. Excluded from urgency calculations, capacity, leaderboard, and routing."
+      on_return_to_active: "Reset urgency anchor to current timestamp (delta_t = 0) and progress = 0.0. curve_start (if once-off) is preserved."
 
 # ==============================================================================
 # PARTIAL COMPLETION MECHANICS (PROGRESS & EFFORT/SIGNIFICANCE SCALING)
@@ -169,21 +226,21 @@ partial_completions:
 
     remaining_work_multiplier:
       formula: "R = 1.0 - accumulated_progress"
-      range: "0.0 < R <= 1.0"
+      range: "0.0 <= R <= 1.0"
       description: "Linear scaling factor representing remaining effort and significance required."
 
   dual_scaling_behavior:
     significance_scaling:
-      formula: "S_effective = R * S_base"
-      behavior: "Immediately reduces urgency weight W(x) proportionally to progress made, dropping the task lower on the leaderboard."
+      formula: "S_shaped = S_base * M_deferment * M_vacation (R is applied outside the pre-epoch bracket)"
+      behavior: "Stakes multipliers (deferment, vacation) scale the significance used in the prefactor. Partial progress R is applied after the prefactor so that pre-epoch anti-drowning and curve shape continue to work correctly."
 
     effort_scaling:
-      formula: "E_effective = R * E_base"
-      behavior: "Scales active cognitive heaviness continuously. Instantly reduces daily domain maintenance load C_i = E_effective / T_i, freeing Attention Units."
+      formula: "E_effective = R * E_base (or R * E_override during vacation)"
+      behavior: "Scales active cognitive heaviness continuously. For recurring: C_i = E_effective / T_i. For once-off: C = E_effective * f(x, curve) (clamped at E_effective after due)."
 
     actionability_ratio_stability:
-      formula: "ROI = W(x) / E_effective = (R * S * f(x)) / (R * E) = (S * f(x)) / E"
-      behavior: "The effort-to-urgency priority ratio remains mathematically stable regardless of partial progress made."
+      formula: "ROI = W / E_effective = [R * prefactor(x, S_shaped, curve)] / (R * E) = prefactor(x, S_shaped, curve) / E  (independent of R)"
+      behavior: "The effort-to-urgency priority ratio remains mathematically stable regardless of partial progress made. R cancels. Note: with pre-epoch scaling, the full W/S ratio is not a pure shape measure."
 
   system_safeguards:
     urgency_clock_safeguard:
@@ -216,7 +273,7 @@ partial_completions:
         deferment: "Unchanged (E_base remains fixed)"
       overshoot_penalty:
         partial_completion: "None"
-        deferment: "Rebounds up to 1.2x - 1.5x penalty peak"
+        deferment: "M(k) = 1 + 0.1 * k (unbounded; e.g. 1.2x at k=2, 1.5x at k=5)"
       ui_indicator:
         partial_completion: "Progress ring / progress bar"
         deferment: "deferment_count badge"
@@ -252,21 +309,21 @@ deferment_mechanics:
     phases:
       phase_1_recovery:
         condition: "0 <= delta_t_defer <= 0.5 * T"
-        formula: "S_effective = S_base * [ 0.10 + 1.80 * (delta_t_defer / T) ]"
+        formula: "M_deferment = 0.10 + 1.80 * (delta_t_defer / T); S_shaped = S_base * M_deferment"
         behavior: "Significance starts at 10% of S_base and recovers linearly back to 100% of S_base over half the task interval."
 
       phase_2_rebound_overshoot:
         condition: "0.5 * T < delta_t_defer <= 1.0 * T"
-        formula: "S_effective = S_base * [ 1.0 + 0.20 * k * ((delta_t_defer / T) - 0.5) ]"
-        behavior: "Significance continues rising linearly past S_base, overshooting up to max rebound multiplier M(k) * S_base."
+        formula: "M_deferment = 1.0 + 0.20 * k * ((delta_t_defer / T) - 0.5); S_shaped = S_base * M_deferment"
+        behavior: "Significance continues rising linearly past S_base, overshooting up to M(k) * S_base."
 
       phase_3_terminal_penalty:
         condition: "delta_t_defer > 1.0 * T"
-        formula: "S_effective = S_base * M(k)"
+        formula: "M_deferment = M(k) = 1.0 + 0.10 * k; S_shaped = S_base * M_deferment"
         behavior: "Significance remains pegged at penalty peak until task is completed or deferred again."
 
   completion_interaction:
-    behavior: "Completing a task resets S_effective back to standard tier S_base, but deferment_count remains at k."
+    behavior: "Completing a task resets the deferment multiplier back to 1.0 (S_shaped reverts to S_base * other active multipliers), but deferment_count remains at k."
 
 # ==============================================================================
 # WINDOWS OF VIABILITY
@@ -274,7 +331,7 @@ deferment_mechanics:
 
 viability_windows:
   description: "Restricts task visibility and actionable calculations based on temporal schedules."
-  evaluation_rule: "Tasks evaluated outside their viability window dynamically inherit 'hidden' state mechanics."
+  evaluation_rule: "Tasks evaluated outside their viability window are treated as virtually hidden for routing, leaderboard, and capacity. The stored state field is NOT changed (a frozen task remains frozen)."
   urgency_clock_interaction: "Urgency clock continues advancing during non-viable periods."
   supported_window_types:
     day_of_week:
@@ -288,8 +345,8 @@ viability_windows:
       description: "Seasonal or calendar-bounded tasks."
 
   state_routing_logic:
-    inside_window: "Todo operates according to its primary state (typically active)."
-    outside_window: "Todo is treated as conditionally 'hidden'. Suppressed from leaderboard and capacity allocations until window opens."
+    inside_window: "Todo operates according to its primary persisted state (active, frozen, etc.)."
+    outside_window: "Treated as hidden for leaderboard, summary, and capacity. Stored state and its clock rule are unchanged."
 
 # ==============================================================================
 # COGNITIVE DOMAINS, CONTEXTS & CAPACITY MODELING
@@ -300,26 +357,25 @@ domains_and_capacity:
   # ATTENTION UNIT (AU) DEFINITION
   # 1.0 AU = Daily maintenance cost of a Standard Effort (E=1.0) task with a 1-day interval (T=1.0).
   # ----------------------------------------------------------------------------
-  cost_formula: "C_i = E_effective / T_i = (R * E_base) / T_i"
+  cost_formula:
+    recurring: "C_i = E_effective / T_i (constant over time, independent of curve and x)"
+    once_off: "C = E_effective * f(x, curve) for x <= 1; C = E_effective once overdue (clamped)."
 
   # ----------------------------------------------------------------------------
   # ONCE-OFF TASK LOAD (is_recurring: false)
   # Real-world meaning: A once-off task has no steady maintenance cost; its load
-  # ramps up as the due date nears, spreading the work across the remaining days,
-  # then holds at its peak once overdue. Peak load equals that of a daily (T = 1)
-  # recurring task: an overdue once-off task weighs on capacity exactly as much per
-  # day as a daily task of the same effort that is completed every day (E_i AU/day),
-  # independent of its own interval T.
-  # Proxy: reuses the existing logarithmic urgency ratio W(x) / S_effective, so no
-  # new curve or constants are introduced.
+  # ramps according to the per-task curve shape as the due date nears, then holds
+  # at its peak once overdue. Peak load equals that of a daily (T = 1) recurring
+  # task of the same effort.
+  # R(x) here is the shape function f, not W/S (except when S_base = 1).
   # ----------------------------------------------------------------------------
   once_off_cost_formula:
-    applies_to: "Active tasks with is_recurring: false. Recurring tasks keep C_i = E_i / T_i."
-    equation: "C_i(x) = E_i * R(x)"
-    baseline_load: "E_i AU/day, i.e. E_i / T with T fixed at 1.0 day (the daily-task equivalent). T_i of the once-off task only scales the ramp via x = delta_t / T_i; it does not scale the peak."
+    applies_to: "Active tasks with is_recurring: false. Recurring tasks keep C_i = E_i / T_i (independent of curve)."
+    equation: "C(x) = E_effective * f(x, curve) for x <= 1; C = E_effective for x > 1"
+    baseline_load: "E_effective AU/day (the daily-task equivalent). The once-off's own T only affects how fast x advances; it does not change the peak."
     ramp_factor:
-      R_x: "R(x) = ln(1 + a * x) / ln(1 + a) for 0 <= x <= 1; R(x) = 1.0 for x > 1"
-      relation_to_urgency: "R(x) = W(x) / S_effective while x <= 1. Unlike W(x), R is clamped at 1.0 past the due date instead of growing exponentially."
+      f_x: "f(x, curve) from the per-task shape function (log, linear, or late-rise)."
+      relation_to_urgency: "f(x, curve) is the shape ramp only. For S_base = 1 it equals W/S at x <= 1 before R. For S_base > 1, W uses the pre-epoch prefactor so f != W/S. Once-off capacity always uses f (clamped), never the full overdue exponential."
       behavior: "Starts at 0 when the task is created or activated (x = 0), rises quickly early (~0.75 at x = 0.5), and reaches the daily-equivalent peak load E_i at the due date."
       overdue_behavior: "Load persists at 100% of E_i (R = 1.0, same as a daily task) until the task is completed. Overdue debt is still tracked separately via x > 1.0."
       terminal_behavior: "Completed once-off tasks contribute 0 load (see todo_states.completed)."
@@ -428,14 +484,14 @@ vacations_and_capacity:
 
 leaderboard_routing:
   top_n_selection:
-    pool_allocation_strategy: "Dynamic Category Sampling"
-    formula: "Category_Share = Category_Load_AU / Total_Active_Load_AU"
-    description: "Prevents a flood of overdue daily chores in one category from starving other domains."
+    pool_allocation_strategy: "Dynamic Domain Sampling (not yet implemented; current top-N is pure weight sort, limit 3)"
+    formula: "Domain_Share = Domain_Load_AU / Total_Active_Load_AU"
+    description: "Prevents a flood of overdue daily chores in one domain from starving other domains."
 
   proactive_radar_bucket:
     condition: "x <= 1.0"
-    sorting: "W(x) / S_effective DESC"
-    description: "Surfaces tasks approaching peak epoch that offer maximum proactive load reduction."
+    sorting: "f(x, curve) DESC (proximity to peak on the task's own curve), then actionability"
+    description: "Surfaces tasks approaching their peak epoch (independent of tier) that offer good proactive load reduction. Uses the shape function f, not W/S (pre-epoch scaling makes W/S tier-dependent)."
 
 # ==============================================================================
 # DUE PROXIMITY VIEW
@@ -458,7 +514,7 @@ due_proximity_view:
   client_ui:
     due_button: "Placed next to All/Active/Inactive/Done. Uses filter=active & sort=due (active tasks only, sorted by due proximity instead of weight)."
     count: "Matches active count."
-    offline: "Web and Plasma compute abs(dueOffsetMs) from server metrics or local fallback using same clock rules."
+    offline: "Web and Plasma prefer server-provided metrics (including dueOffsetMs). When falling back, local computation approximates dueOffsetMs but does not yet fully match engine clock rules (frozen/completed) or weight formula (pre-epoch scaling)."
     cli: "taskify ls --due calls /tasks?filter=active&sort=due"
 
 # ==============================================================================
@@ -486,6 +542,19 @@ implementation_status:
       - { feature: "Recurring completion resets urgency anchor and logs completion", done: true }
       - { feature: "Once-off completion halts clock and moves to completed", done: true }
 
+    urgency_curve_and_dial:
+      - { feature: "Per-task curve parameter (default -1 reproducing current log)", done: false }
+      - { feature: "Shape function log → linear → late exponential with visual illustration", done: false }
+      - { feature: "Once-off curve_start dial (0-100%, does not move due date)", done: false }
+      - { feature: "Once-off capacity uses the task's curve shape", done: false }
+      - { feature: "UI: curve slider + illustration + dial marker (web + plasma)", done: false }
+      - { feature: "CLI flags for curve and once-off dial", done: false }
+
+    search_clients:
+      - { feature: "Web search (title substring + regex toggle)", done: true }
+      - { feature: "Web search clear button", done: false }
+      - { feature: "Plasma search field + clear button (parity)", done: false }
+
     todo_states:
       - { feature: "active state", done: true }
       - { feature: "frozen state (clock held, resumes from same elapsed position)", done: true }
@@ -495,10 +564,11 @@ implementation_status:
       - { feature: "Only active tasks counted in summary and leaderboard", done: true }
 
     capacity:
-      - { feature: "Recurring daily cost C_i = E / T", done: true }
-      - { feature: "Once-off cost ramp C_i(x) = E * R(x), peak E independent of T", done: true }
+      - { feature: "Recurring daily cost C_i = E / T (constant)", done: true }
+      - { feature: "Once-off cost follows shape f(x, curve), peak E independent of T", done: false }
       - { feature: "Per-domain loads against caps (5.0 / 4.0 / 3.0 AU)", done: true }
       - { feature: "System baseline ceiling 12.0 AU", done: true }
+      - { feature: "energy_factor query param on /summary (clamped [0.1,1])", done: true }
       - { feature: "Burnout / overwhelm threshold (overdue debt > 25%, load > 100%)", done: false }
       - { feature: "UI heatmap zones (green / yellow / red)", done: false }
       - { feature: "Context switcher (work / home / study) with per-context capacity", done: false }
@@ -524,27 +594,43 @@ implementation_status:
       - { feature: "Suggested vacation from capacity reduction and triage engine", done: false }
 
     leaderboard_routing:
-      - { feature: "Top-N leaderboard by weight (GET /tasks/top)", done: true }
-      - { feature: "Dynamic category sampling by load share", done: false }
-      - { feature: "Proactive radar bucket (x <= 1.0, sorted by W(x) / S)", done: false }
+      - { feature: "Top-N leaderboard by weight (GET /tasks/top, limit 3)", done: true }
+      - { feature: "Dynamic domain sampling by load share", done: false }
+      - { feature: "Proactive radar bucket (x <= 1.0, sorted by f(x, curve))", done: false }
 
     due_proximity:
       - { feature: "dueOffsetMs (signed ms) exposed by engine.getMetrics, respecting frozen/completed clocks", done: true }
       - { feature: "GET /api/v1/tasks?sort=due (composable with filter, domain, limit; absolute due proximity sort)", done: true }
-      - { feature: "Web app Due filter button (active tasks, sorted by abs(dueOffsetMs) instead of weight, with offline fallback)", done: true }
-      - { feature: "Plasma widget Due button (same membership and sort rules)", done: true }
+      - { feature: "Web app Due filter button (active tasks, sorted by abs(dueOffsetMs) instead of weight)", done: true }
+      - { feature: "Plasma widget Due button (same membership and primary sort rules)", done: true }
       - { feature: "CLI: taskify ls --due (uses filter=active&sort=due)", done: true }
+      - { feature: "Client offline due fallback matches engine clock rules exactly", done: false }
 
     service_api:
       - { feature: "Task CRUD, complete, and state change endpoints", done: true }
-      - { feature: "Task list filtering (state, domain), sorting and limit", done: true }
+      - { feature: "Task list filtering (state, domain), sorting (weight/actionability/title/due) and limit", done: true }
       - { feature: "due proximity sort via ?sort=due", done: true }
-      - { feature: "Summary endpoint with domain loads", done: true }
+      - { feature: "Summary endpoint with domain loads and optional energy_factor", done: true }
+      - { feature: "GET /health", done: true }
       - { feature: "Export / import backup with transactional rollback", done: true }
       - { feature: "SQLite persistence with versioned migrations", done: true }
       - { feature: "Service test suite (engine, db, API) via node:test", done: true }
 
-  known_bugs: []
+  known_bugs:
+    - id: "BUG-4"
+      title: "UI edit of once-off tasks still submits days_ago (rounded elapsed), moving urgency_anchor_at and due date"
+      status: "Web and Plasma hide the days-ago control for once-off but readConfig / save still sends days_ago = Math.round(elapsed). This backdates the anchor on every Save."
+      impact: "Contradicts the once-off due-date model and will immediately undo any curve_start dial set at creation."
+    - id: "BUG-5"
+      title: "Client offline fallbacks do not match engine"
+      details: "Web app.js getMetrics and Plasma main.qml getMetrics + capacity fallback ignore frozen_at / last_completed_at and use S * log ramp (no pre-epoch scaling). Server metrics hide the difference while online."
+      related_punchlist: "due_proximity offline claim overstated"
+    - id: "BUG-6"
+      title: "Client due-sort tertiary tie-break uses title; server uses id"
+      details: "Brief and server sort spec say id ascending. Web and Plasma due sort fall back to title.localeCompare."
+    - id: "BUG-7"
+      title: "PATCH /state=completed does not halt the clock"
+      details: "Only completeTask sets last_completed_at (for once-off). PATCH to completed leaves last_completed_at null, so getMetrics does not hold the clock. Completed state description assumed clock always stops."
 
   fixed_bugs:
     - id: "BUG-1"
@@ -556,3 +642,29 @@ implementation_status:
     - id: "BUG-3"
       title: "Once-off task handling differed between create and update"
       fix: "updateTask with days_ago now leaves last_completed_at null for once-off tasks, matching createTask, and honours is_recurring changed in the same call."
+
+  known_gaps:
+    - "No server-side validation rejecting non-positive interval_days (0 becomes 7 via ||; negatives stored and yield Invalid metrics)."
+    - "No domain validation (unknown domains accepted; load counted in total only)."
+    - "Export writes version 1.1; import ignores version and applies defaults for missing fields."
+    - "GET /health exists but is undocumented in the spec."
+    - "Web search (title substring + optional regex) is client-side only and not mentioned in the brief."
+    - "energy_factor query param on /summary is implemented and tested but has no UI (vacations are the intended replacement)."
+    - "sort=actionability and sort=title exist on the list API but are not enumerated in the spec."
+    - "Client capacity fallbacks and summary still hardcode 12 AU baseline (no energy_factor in offline path)."
+
+  implementation_order:
+    description: "Sequence chosen to protect operational stability. Defaults must reproduce current behavior at every step. Engine changes must update all client fallbacks in the same slice."
+    phases:
+      - "Spec baseline: duplicate equations resolved, curve and curve_start introduced with correct composition, overclaims fixed in spec and punchlist."
+      - "1. Neutral UI (search clear on web; add search + clear to Plasma). No physics risk."
+      - "2. Curve engine (add column with default -1, implement f(x, c) in engine, pin all existing tests at c=-1, update clients + CLI in same change)."
+      - "3. Once-off urgency dial engine (add column default 0, composed x formula, capacity uses composed x, dueOffsetMs unchanged)."
+      - "4. One combined form/layout pass (web + plasma): curve slider + illustration + once-off dial marker. Stop sending days_ago on once-off edits."
+      - "5. Partial completions then deferment (R and M multipliers compose with the shaped prefactor + curve)."
+      - "6. Burnout threshold + heatmap (once-off load is curve-aware)."
+      - "7. Viability windows (virtual hidden) → context switcher → bleedthrough → vacations."
+      - "8. Proactive radar (by f(x, curve)) then domain sampling."
+      - "Prerequisite for phases 2-4: add server validation rejecting non-positive interval_days."
+
+
