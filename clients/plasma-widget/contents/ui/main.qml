@@ -119,7 +119,8 @@ PlasmoidItem {
                 elapsedDays: todo.metrics.elapsedDays || 0,
                 x: todo.metrics.x || 0,
                 weight: todo.metrics.weight || 0,
-                statusText: todo.metrics.statusText || ""
+                statusText: todo.metrics.statusText || "",
+                dueOffsetMs: todo.metrics.dueOffsetMs != null ? todo.metrics.dueOffsetMs : null
             }
         }
 
@@ -127,7 +128,7 @@ PlasmoidItem {
         var intervalDays = Number(todo.interval_days)
         var anchor = Date.parse(todo.urgency_anchor_at)
         if (!isFinite(intervalDays) || intervalDays <= 0 || !isFinite(anchor)) {
-            return { elapsedDays: 0, x: 0, weight: 0, statusText: "Invalid" }
+            return { elapsedDays: 0, x: 0, weight: 0, statusText: "Invalid", dueOffsetMs: null }
         }
 
         var elapsedDays = Math.max(0, (Date.now() - anchor) / 86400000)
@@ -137,7 +138,10 @@ PlasmoidItem {
                 ? significance * Math.log(1 + 10 * x) / Math.log(11)
                 : significance * Math.exp(1.386 * (x - 1))
 
-        return { elapsedDays: elapsedDays, x: x, weight: weight, statusText: "" }
+        var dueAt = anchor + intervalDays * 86400000
+        var dueOffsetMs = dueAt - Date.now()
+
+        return { elapsedDays: elapsedDays, x: x, weight: weight, statusText: "", dueOffsetMs: dueOffsetMs }
     }
 
     function getStatusText(todo) {
@@ -167,6 +171,7 @@ PlasmoidItem {
     function matchesFilter(todo, filter) {
         if (filter === "all") return true
         if (filter === "active") return todo.state === "active"
+        if (filter === "due") return todo.state === "active"
         if (filter === "completed") return todo.state === "completed"
         if (filter === "inactive") return todo.state !== "active" && todo.state !== "completed"
         return false
@@ -177,13 +182,27 @@ PlasmoidItem {
         for (var i = 0; i < todos.length; i++) {
             if (matchesFilter(todos[i], currentFilter)) filtered.push(todos[i])
         }
-        filtered.sort(function(left, right) {
-            var leftActive = left.state === "active"
-            var rightActive = right.state === "active"
-            if (leftActive !== rightActive) return leftActive ? -1 : 1
-            if (leftActive) return getMetrics(right).weight - getMetrics(left).weight
-            return left.title.localeCompare(right.title)
-        })
+        if (currentFilter === "due") {
+            filtered.sort(function(left, right) {
+                var lm = root.getMetrics(left)
+                var rm = root.getMetrics(right)
+                var la = Math.abs( (lm.dueOffsetMs != null ? lm.dueOffsetMs : 999999999) )
+                var ra = Math.abs( (rm.dueOffsetMs != null ? rm.dueOffsetMs : 999999999) )
+                if (la !== ra) return la - ra
+                var lo = lm.dueOffsetMs != null ? lm.dueOffsetMs : 0
+                var ro = rm.dueOffsetMs != null ? rm.dueOffsetMs : 0
+                if (lo !== ro) return lo - ro
+                return left.title.localeCompare(right.title)
+            })
+        } else {
+            filtered.sort(function(left, right) {
+                var leftActive = left.state === "active"
+                var rightActive = right.state === "active"
+                if (leftActive !== rightActive) return leftActive ? -1 : 1
+                if (leftActive) return getMetrics(right).weight - getMetrics(left).weight
+                return left.title.localeCompare(right.title)
+            })
+        }
         return filtered
     }
 
@@ -484,6 +503,14 @@ PlasmoidItem {
                         checked: root.currentFilter === "active"
                         flat: !checked
                         onClicked: root.currentFilter = "active"
+                    }
+
+                    QQC2.Button {
+                        text: "Due " + root.getTodoCount("due")
+                        checkable: true
+                        checked: root.currentFilter === "due"
+                        flat: !checked
+                        onClicked: root.currentFilter = "due"
                     }
 
                     QQC2.Button {

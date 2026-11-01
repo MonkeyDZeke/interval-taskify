@@ -235,12 +235,13 @@ function getMetrics(todo) {
       x: todo.metrics.x || 0,
       weight: todo.metrics.weight || 0,
       statusText: todo.metrics.statusText || "",
+      dueOffsetMs: todo.metrics.dueOffsetMs != null ? todo.metrics.dueOffsetMs : null,
     };
   }
   const intervalDays = Number(todo.interval_days);
   const anchor = Date.parse(todo.urgency_anchor_at);
   if (!isFinite(intervalDays) || intervalDays <= 0 || !isFinite(anchor)) {
-    return { elapsedDays: 0, x: 0, weight: 0, statusText: "Invalid" };
+    return { elapsedDays: 0, x: 0, weight: 0, statusText: "Invalid", dueOffsetMs: null };
   }
   const elapsedDays = Math.max(0, (Date.now() - anchor) / 86400000);
   const x = elapsedDays / intervalDays;
@@ -248,7 +249,9 @@ function getMetrics(todo) {
   const weight = x <= 1
     ? significance * Math.log(1 + 10 * x) / Math.log(11)
     : significance * Math.exp(1.386 * (x - 1));
-  return { elapsedDays, x, weight, statusText: "" };
+  const dueAt = anchor + intervalDays * 86400000;
+  const dueOffsetMs = dueAt - Date.now();
+  return { elapsedDays, x, weight, statusText: "", dueOffsetMs };
 }
 
 function getStatusText(todo) {
@@ -275,6 +278,7 @@ function getStatusText(todo) {
 function matchesFilter(todo, filter) {
   if (filter === "all") return true;
   if (filter === "active") return todo.state === "active";
+  if (filter === "due") return todo.state === "active";
   if (filter === "completed") return todo.state === "completed";
   if (filter === "inactive") return todo.state !== "active" && todo.state !== "completed";
   return false;
@@ -300,13 +304,29 @@ function buildSearchMatcher() {
 
 function getFilteredTodos() {
   const matchesSearch = buildSearchMatcher();
-  return todos.filter((t) => matchesFilter(t, currentFilter) && (!matchesSearch || matchesSearch(t))).sort((l, r) => {
-    const la = l.state === "active";
-    const ra = r.state === "active";
-    if (la !== ra) return la ? -1 : 1;
-    if (la) return getMetrics(r).weight - getMetrics(l).weight;
-    return l.title.localeCompare(r.title);
-  });
+  let result = todos.filter((t) => matchesFilter(t, currentFilter) && (!matchesSearch || matchesSearch(t)));
+  if (currentFilter === "due") {
+    result.sort((l, r) => {
+      const lm = getMetrics(l);
+      const rm = getMetrics(r);
+      const la = Math.abs(lm.dueOffsetMs != null ? lm.dueOffsetMs : Infinity);
+      const ra = Math.abs(rm.dueOffsetMs != null ? rm.dueOffsetMs : Infinity);
+      if (la !== ra) return la - ra;
+      const lo = lm.dueOffsetMs != null ? lm.dueOffsetMs : 0;
+      const ro = rm.dueOffsetMs != null ? rm.dueOffsetMs : 0;
+      if (lo !== ro) return lo - ro; // overdue before future
+      return l.title.localeCompare(r.title);
+    });
+  } else {
+    result.sort((l, r) => {
+      const la = l.state === "active";
+      const ra = r.state === "active";
+      if (la !== ra) return la ? -1 : 1;
+      if (la) return getMetrics(r).weight - getMetrics(l).weight;
+      return l.title.localeCompare(r.title);
+    });
+  }
+  return result;
 }
 
 const getTodoCount = (filter) => todos.filter((t) => matchesFilter(t, filter)).length;
@@ -414,7 +434,7 @@ function renderItem(todo) {
 function render() {
   document.querySelectorAll("[data-filter]").forEach((b) => {
     const f = b.dataset.filter;
-    const label = { all: "All", active: "Active", inactive: "Inactive", completed: "Done" }[f];
+    const label = { all: "All", active: "Active", due: "Due", inactive: "Inactive", completed: "Done" }[f];
     b.textContent = label + " " + getTodoCount(f);
     b.classList.toggle("checked", currentFilter === f);
   });

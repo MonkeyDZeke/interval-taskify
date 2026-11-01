@@ -93,10 +93,24 @@ async function cmdTop(limitArg) {
 }
 
 // Command: List All Tasks
-async function cmdList(filter = "active") {
-  const data = await api(`/tasks?filter=${filter}`);
+async function cmdList(mode = "active") {
+  let filter = "active";
+  let sort = null;
+  if (mode === "all") filter = "all";
+  else if (mode === "inactive") filter = "inactive";
+  else if (mode === "completed") filter = "completed";
+  else if (mode === "due") {
+    filter = "active";
+    sort = "due";
+  }
 
-  console.log(`\n${colors.bold}=== TASK LEADERBOARD (${filter.toUpperCase()}) ===${colors.reset}\n`);
+  let query = `?filter=${filter}`;
+  if (sort) query += `&sort=${sort}`;
+
+  const data = await api(`/tasks${query}`);
+
+  const label = mode.toUpperCase();
+  console.log(`\n${colors.bold}=== TASK LEADERBOARD (${label}) ===${colors.reset}\n`);
   if (data.tasks.length === 0) {
     console.log(`  ${colors.dim}No tasks found.${colors.reset}\n`);
     return;
@@ -201,7 +215,7 @@ ${colors.bold}USAGE:${colors.reset}
 ${colors.bold}COMMANDS:${colors.reset}
   summary [--summary]   Print today's total weight & top 1/3 leaderboard summary
   top [N]               Show today's top N priorities (default: 3)
-  ls [--all|--inactive|--completed] List all tasks sorted by urgency
+  ls [--all|--inactive|--completed|--due] List all tasks sorted by urgency (Due sorts active by due proximity)
   done <id>             Mark a task complete by ID
   add "Title" [opts]    Add a new task (recurring unless --once)
                         Opts: --once (once-off; -i is days until due)
@@ -228,7 +242,11 @@ switch (cmd) {
     break;
   case "ls":
   case "list":
-    cmdList(args.includes("--all") ? "all" : (args.includes("--inactive") ? "inactive" : (args.includes("--completed") ? "completed" : "active")));
+    if (args.includes("--due")) {
+      cmdList("due");
+    } else {
+      cmdList(args.includes("--all") ? "all" : (args.includes("--inactive") ? "inactive" : (args.includes("--completed") ? "completed" : "active")));
+    }
     break;
   case "done":
   case "complete":
