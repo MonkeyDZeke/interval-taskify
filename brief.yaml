@@ -727,10 +727,6 @@ implementation_status:
       - { feature: "Service test suite (engine, db, API) via node:test", done: true }
 
   known_bugs:
-    - id: "BUG-4"
-      title: "UI edit of once-off tasks still submits days_ago (rounded elapsed), moving urgency_anchor_at and due date"
-      status: "Web and Plasma hide the days-ago control for once-off but readConfig / save still sends days_ago = Math.round(elapsed). This backdates the anchor on every Save."
-      impact: "Contradicts the once-off due-date model and will immediately undo any curve_start dial set at creation."
     - id: "BUG-5"
       title: "Client offline fallbacks do not match engine"
       details: "Web app.js getMetrics and Plasma main.qml getMetrics + capacity fallback ignore frozen_at / last_completed_at and use S * log ramp (no pre-epoch scaling). Server metrics hide the difference while online."
@@ -749,9 +745,9 @@ implementation_status:
     - id: "BUG-3"
       title: "Once-off task handling differed between create and update"
       fix: "updateTask with days_ago now leaves last_completed_at null for once-off tasks, matching createTask, and honours is_recurring changed in the same call."
-    - id: "BUG-7"
-      title: "PATCH /state=completed does not halt the clock"
-      fix: "setTaskState now sets last_completed_at on transition into completed (or if null). getMetrics holds the clock for any task in completed state. PATCH /state and completeTask both halt the clock; completeTask also logs the completion and handles recurring reset."
+    - id: "BUG-4"
+      title: "UI edit of once-off tasks still submits days_ago (rounded elapsed), moving urgency_anchor_at and due date"
+      fix: "Web and Plasma omit days_ago from write payloads when is_recurring=false (buildTaskPayload in shared taskify-logic.js). Recurring keeps the field. API clients wired to the builder."
 
   known_gaps:
     - "No server-side validation rejecting non-positive interval_days (0 becomes 7 via ||; negatives stored and yield Invalid metrics)."

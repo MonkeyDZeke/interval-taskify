@@ -1,5 +1,7 @@
 .pragma library
 
+.import "taskify-logic.js" as Logic
+
 const baseUrl = "http://localhost:8023/api/v1"
 
 function request(method, path, body, callback) {
@@ -52,7 +54,7 @@ function addTask(title, config, callback) {
   const payload = {
     title: title,
     interval_days: config.interval_days || 7,
-    days_ago: config.days_ago || 0,
+    days_ago: config.is_recurring === false ? undefined : (config.days_ago || 0),
     significance: config.significance || 1.0,
     effort: config.effort || 1.0,
     domain: config.domain || "executive_mental",
@@ -65,7 +67,7 @@ function updateTask(id, title, config, callback) {
   const payload = {
     title: title,
     interval_days: config.interval_days,
-    days_ago: config.days_ago,
+    days_ago: config.is_recurring === false ? undefined : config.days_ago,
     significance: config.significance,
     effort: config.effort,
     domain: config.domain,

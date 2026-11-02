@@ -5,6 +5,7 @@ import org.kde.plasma.plasmoid
 import org.kde.plasma.components as PlasmaComponents
 import org.kde.kirigami as Kirigami
 import "ApiClient.js" as ApiClient
+import "taskify-logic.js" as Logic
 
 PlasmoidItem {
     id: root
@@ -311,11 +312,13 @@ PlasmoidItem {
                         Keys.onReturnPressed: {
                             var config = {
                                 interval_days: intervalInput.value,
-                                days_ago: daysAgoInput.value,
                                 significance: significanceInput.currentValue,
                                 effort: effortInput.currentValue,
                                 domain: domainInput.currentValue,
                                 is_recurring: !onceInput.checked
+                            };
+                            if (!onceInput.checked) {
+                                config.days_ago = daysAgoInput.value;
                             }
                             if (root.editingTodo) {
                                 root.saveEditingTodo(text, config)
