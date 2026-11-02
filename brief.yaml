@@ -399,6 +399,11 @@ domains_and_capacity:
       max_daily_capacity_au: 3.0
       description: "Holds relationships, check-ins, family, and social maintenance."
 
+  unknown_domain_behavior:
+    create_update: "Any string value for domain is accepted (no server-side enum validation)."
+    load_accounting: "Unknown domains contribute their dailyCostAu to total_active_cost_au only. They produce no entry in domain_loads."
+    recommendation: "Clients should restrict UI to the three canonical values; server tolerates others for forward compatibility and import."
+
   # ----------------------------------------------------------------------------
   # SCIENCE-BACKED BURNOUT & OVERWHELM THRESHOLD
   # Real-world meaning: The point where accumulated overdue task debt triggers
@@ -516,6 +521,111 @@ due_proximity_view:
     count: "Matches active count."
     offline: "Web and Plasma prefer server-provided metrics (including dueOffsetMs). When falling back, local computation approximates dueOffsetMs but does not yet fully match engine clock rules (frozen/completed) or weight formula (pre-epoch scaling)."
     cli: "taskify ls --due calls /tasks?filter=active&sort=due"
+
+# ==============================================================================
+# CURRENT IMPLEMENTED API SURFACE
+# Documents what the running service + engine expose today.
+# ==============================================================================
+
+current_implemented_api:
+  description: |
+    Live service API surface (service/src/routes.js) and engine output shapes (engine.js).
+    All list / create / update responses attach a full `metrics` object.
+
+  task_listing:
+    endpoint: "GET /api/v1/tasks"
+    query_parameters:
+      filter:
+        default: "active"
+        values: ["active", "inactive", "completed", "all"]
+        semantics: |
+          active     → state === "active"
+          inactive   → state !== "active" && state !== "completed"
+          completed  → state === "completed"
+          all        → no state filter
+      domain:
+        description: "Exact match on the stored domain string. Unknown domains are accepted by the API (no validation) and contribute only to total_active_cost_au (they do not appear under any domain_loads entry)."
+      sort:
+        default: "weight"
+        supported:
+          weight: "descending by metrics.weight"
+          actionability: "descending by metrics.actionability (W/E)"
+          title: "ascending by title.localeCompare (stable tie-break)"
+          due: "by absolute proximity to due date (see due_proximity_view)"
+      limit:
+        description: "Integer. Applied after filter + sort + metrics decoration."
+    response: "{ tasks: [{...original, metrics: <getMetrics result>}] }"
+
+  top_priorities:
+    endpoint: "GET /api/v1/tasks/top"
+    query: "limit (default 3)"
+    behavior: "Hard filter to active tasks only, then weight sort + slice."
+
+  single_task:
+    endpoint: "GET /api/v1/tasks/:id"
+    response: "Task with metrics attached, or 404."
+
+  summary:
+    endpoint: "GET /api/v1/summary"
+    query_parameters:
+      energy_factor:
+        type: "number"
+        clamping: "[0.1, 1.0]"
+        default: 1.0
+        note: "Implemented and tested; no UI yet (vacations planned as the user-facing replacement)."
+    response:
+      total_weight: "sum of weight over active tasks"
+      total_active_cost_au: "sum of dailyCostAu (includes unknown-domain tasks)"
+      effective_capacity_au: "12.0 * clamped_energy_factor"
+      energy_factor: "echo of (clamped) input value"
+      domain_loads: "only the three registered domains"
+
+  export_import:
+    export:
+      endpoint: "GET /api/v1/export"
+      format: |
+        {
+          "version": "1.1",
+          "exported_at": "...",
+          "todos": [ ... ],
+          "completions": [ { todo_id, completed_at } ]
+        }
+    import:
+      endpoint: "POST /api/v1/import"
+      behavior: |
+        - The version field is accepted but ignored currently.
+        - significance/effort are normalized with nearestChoice (off-tier values are snapped, never rejected).
+        - state defaults to "active", is_recurring defaults to true.
+        - Full BEGIN/COMMIT/ROLLBACK transactional safety.
+    note: "Export always writes the current 1.1 schema."
+
+  health:
+    endpoint: "GET /health"
+    mounted_at: "root (outside /api/v1)"
+    response: "{ \"status\": \"ok\", \"service\": \"interval-taskify\" }"
+
+  engine_metrics:
+    description: "Object returned by engine.getMetrics and attached to API task objects."
+    fields:
+      elapsedDays: number   # effective (clock may be held)
+      x: number
+      weight: number
+      dailyCostAu: number   # once-off uses ramp; recurring is E/T
+      actionability: number # weight / effort
+      statusText: string
+      dueOffsetMs: number | null
+    clock_rules: "frozen uses frozen_at; completed uses last_completed_at; everything else uses wall time."
+    invalid_handling: "Bad interval_days (<=0) or anchor → weight=0, dueOffsetMs=null, statusText=\"Invalid\""
+
+  client_side_features:
+    search:
+      location: "clients/web-app (app.js + index.html)"
+      implementation: "Purely client-side after receiving the full list."
+      modes:
+        - "Plain substring match (case-insensitive) on title"
+        - "Regex mode (new RegExp(input, 'i')) with invalid regex gracefully disabled"
+      availability: "Only in the web app. Plasma and CLI have no equivalent search yet."
+      note: "Search is applied on top of the current filter (active/due/etc)."
 
 # ==============================================================================
 # IMPLEMENTATION STATUS
@@ -645,13 +755,9 @@ implementation_status:
 
   known_gaps:
     - "No server-side validation rejecting non-positive interval_days (0 becomes 7 via ||; negatives stored and yield Invalid metrics)."
-    - "No domain validation (unknown domains accepted; load counted in total only)."
-    - "Export writes version 1.1; import ignores version and applies defaults for missing fields."
-    - "GET /health exists but is undocumented in the spec."
-    - "Web search (title substring + optional regex) is client-side only and not mentioned in the brief."
-    - "energy_factor query param on /summary is implemented and tested but has no UI (vacations are the intended replacement)."
-    - "sort=actionability and sort=title exist on the list API but are not enumerated in the spec."
-    - "Client capacity fallbacks and summary still hardcode 12 AU baseline (no energy_factor in offline path)."
+    - "Client capacity fallbacks (web app.js getMetrics, Plasma main.qml, CLI) and offline summary still hardcode 12 AU baseline and ignore energy_factor (BUG-5 related)."
+    - "Web title search (substring + regex) is purely client-side; no server-side search or filter by title exists."
+    - "Client offline due/weight fallbacks do not yet fully match server engine clock rules for frozen/completed or pre-epoch scaling (see BUG-5)."
 
   implementation_order:
     description: "Sequence chosen to protect operational stability. Defaults must reproduce current behavior at every step. Engine changes must update all client fallbacks in the same slice."
@@ -666,5 +772,3 @@ implementation_status:
       - "7. Viability windows (virtual hidden) → context switcher → bleedthrough → vacations."
       - "8. Proactive radar (by f(x, curve)) then domain sampling."
       - "Prerequisite for phases 2-4: add server validation rejecting non-positive interval_days."
-
-
