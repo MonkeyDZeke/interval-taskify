@@ -186,6 +186,49 @@ describe("setTaskState", () => {
     assert.equal(r.urgency_anchor_at, iso(T0 + DAY));
     assert.equal(db.exportData().completions.length, 1);
   });
+
+  // BUG-7: PATCH /state=completed must set last_completed_at so getMetrics holds the clock.
+  // Only completeTask currently sets it (for once-offs). Completed state description assumes clock always stops.
+  test("setTaskState to completed sets last_completed_at and halts the clock (once-off)", () => {
+    const t = db.createTask({ title: "a", is_recurring: false, interval_days: 10, days_ago: 4 });
+    const c = db.setTaskState(t.id, "completed");
+    assert.equal(c.state, "completed");
+    assert.equal(c.last_completed_at, iso(T0));
+    assert.equal(c.urgency_anchor_at, t.urgency_anchor_at); // does not move due date
+    assert.equal(db.exportData().completions.length, 0); // not a logged completion
+    setNow(T0 + 50 * DAY);
+    assert.equal(getMetrics(db.getTaskById(t.id), Date.now()).elapsedDays, 4);
+  });
+
+  test("setTaskState to completed also halts the clock for recurring tasks", () => {
+    const t = db.createTask({ title: "a", is_recurring: true, interval_days: 10, days_ago: 4 });
+    const c = db.setTaskState(t.id, "completed");
+    assert.equal(c.state, "completed");
+    assert.equal(c.last_completed_at, iso(T0));
+    setNow(T0 + 50 * DAY);
+    assert.equal(getMetrics(db.getTaskById(t.id), Date.now()).elapsedDays, 4);
+  });
+
+  test("re-PATCH completed does not move last_completed_at", () => {
+    const t = db.createTask({ title: "a", is_recurring: false, days_ago: 4 });
+    db.setTaskState(t.id, "completed");
+    setNow(T0 + DAY);
+    const again = db.setTaskState(t.id, "completed");
+    assert.equal(again.last_completed_at, iso(T0));
+  });
+
+  test("completed from frozen holds the frozen elapsed (not wall time)", () => {
+    const t = db.createTask({ title: "a", days_ago: 10 });
+    db.setTaskState(t.id, "frozen");
+    setNow(T0 + 5 * DAY);
+    const c = db.setTaskState(t.id, "completed");
+    // frozen_at at T0, anchor adjusted on thaw-to-completed but clock held at completion instant
+    // effective elapsed should be 10 (pre-freeze) because frozen time doesn't count and we halt
+    // After fix: anchor is shifted by frozen duration, last_completed_at=now, elapsed at hold = 10
+    assert.equal(getMetrics(c, Date.now()).elapsedDays, 10);
+    setNow(T0 + 50 * DAY);
+    assert.equal(getMetrics(db.getTaskById(t.id), Date.now()).elapsedDays, 10);
+  });
 });
 
 describe("deleteTask", () => {

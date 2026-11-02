@@ -189,6 +189,7 @@ function setTaskState(id, newState) {
   const nowIso = new Date(nowMs).toISOString();
   let urgencyAnchor = task.urgency_anchor_at;
   let frozenAt = task.frozen_at;
+  let lastCompletedAt = task.last_completed_at;
 
   if (task.state === "frozen" && newState !== "frozen" && frozenAt) {
     const frozenDuration = nowMs - Date.parse(frozenAt);
@@ -206,8 +207,16 @@ function setTaskState(id, newState) {
     frozenAt = null;
   }
 
-  const stmt = db.prepare("UPDATE todos SET state = ?, urgency_anchor_at = ?, frozen_at = ? WHERE id = ?");
-  stmt.run(newState, urgencyAnchor, frozenAt, id);
+  // BUG-7 fix: entering completed (or repairing a null) sets last_completed_at so getMetrics holds the clock.
+  // Do not move it on re-PATCH if already set. Do not log a completion row (that is completeTask's job).
+  if (newState === "completed") {
+    if (task.state !== "completed" || !lastCompletedAt) {
+      lastCompletedAt = nowIso;
+    }
+  }
+
+  const stmt = db.prepare("UPDATE todos SET state = ?, urgency_anchor_at = ?, frozen_at = ?, last_completed_at = ? WHERE id = ?");
+  stmt.run(newState, urgencyAnchor, frozenAt, lastCompletedAt, id);
 
   return getTaskById(id);
 }

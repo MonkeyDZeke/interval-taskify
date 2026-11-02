@@ -113,7 +113,7 @@ recurrence_and_lifecycle:
       recurring_false:
         action: "Mark full completion timestamp, reset accumulated_progress = 0.0, halt urgency clock."
         target_state: "completed"
-        description: "Task transitions to completed state. Clock is held at last_completed_at (set by completeTask for once-offs). Reactivation is supported and resets the anchor."
+        description: "Task transitions to completed state. Clock is held at last_completed_at (set by completeTask or PATCH /state=completed). Reactivation is supported and resets the anchor."
     capacity_handler:
       recurring_true: "Daily load C_i = E_i / T_i (constant)."
       recurring_false: "Daily load ramps with proximity to due date per domains_and_capacity.once_off_cost_formula, peaking at E_i (daily-task equivalent) when due or overdue."
@@ -205,8 +205,8 @@ todo_states:
       urgency_clock_behavior: "getMetrics still computes using wall time while paused, but the value is discarded on reactivation."
       on_return_to_active: "Reset the urgency anchor to the reactivation time so elapsed starts from 0; do not record a completion event. curve_start (if once-off) is preserved."
     completed:
-      description: "Terminal state reached via completeTask (primarily once-off). Clock hold requires last_completed_at to be set."
-      urgency_clock_behavior: "If last_completed_at is set, getMetrics holds the clock at that instant. Excluded from urgency calculations, capacity, leaderboard, and routing."
+      description: "Terminal state. Reached via completeTask (primarily once-off) or PATCH /state=completed. Clock hold is guaranteed because last_completed_at is set on entry."
+      urgency_clock_behavior: "getMetrics holds the clock at last_completed_at. Excluded from urgency calculations, capacity, leaderboard, and routing."
       on_return_to_active: "Reset urgency anchor to current timestamp (delta_t = 0) and progress = 0.0. curve_start (if once-off) is preserved."
 
 # ==============================================================================
@@ -738,9 +738,6 @@ implementation_status:
     - id: "BUG-6"
       title: "Client due-sort tertiary tie-break uses title; server uses id"
       details: "Brief and server sort spec say id ascending. Web and Plasma due sort fall back to title.localeCompare."
-    - id: "BUG-7"
-      title: "PATCH /state=completed does not halt the clock"
-      details: "Only completeTask sets last_completed_at (for once-off). PATCH to completed leaves last_completed_at null, so getMetrics does not hold the clock. Completed state description assumed clock always stops."
 
   fixed_bugs:
     - id: "BUG-1"
@@ -752,6 +749,9 @@ implementation_status:
     - id: "BUG-3"
       title: "Once-off task handling differed between create and update"
       fix: "updateTask with days_ago now leaves last_completed_at null for once-off tasks, matching createTask, and honours is_recurring changed in the same call."
+    - id: "BUG-7"
+      title: "PATCH /state=completed does not halt the clock"
+      fix: "setTaskState now sets last_completed_at on transition into completed (or if null). getMetrics holds the clock for any task in completed state. PATCH /state and completeTask both halt the clock; completeTask also logs the completion and handles recurring reset."
 
   known_gaps:
     - "No server-side validation rejecting non-positive interval_days (0 becomes 7 via ||; negatives stored and yield Invalid metrics)."

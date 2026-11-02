@@ -107,7 +107,7 @@ router.post("/tasks/:id/complete", (req, res) => {
   res.json({ task: { ...task, metrics: engine.getMetrics(task) } });
 });
 
-// PATCH /api/v1/tasks/:id/state - Change state (active/frozen/paused/hidden)
+// PATCH /api/v1/tasks/:id/state - Change state (active/frozen/paused/hidden/completed). completed halts the clock via last_completed_at.
 router.patch("/tasks/:id/state", (req, res) => {
   const { state } = req.body;
   const task = db.setTaskState(req.params.id, state);

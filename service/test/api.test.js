@@ -82,6 +82,16 @@ describe("GET /tasks", () => {
     assert.ok(a.id);
   });
 
+  test("PATCH /state=completed sets last_completed_at (BUG-7)", async () => {
+    const t = await create({ title: "to-be-completed", interval_days: 10, days_ago: 4, is_recurring: false });
+    const r = await call("PATCH", `/api/v1/tasks/${t.id}/state`, { state: "completed" });
+    assert.equal(r.status, 200);
+    assert.equal(r.body.task.state, "completed");
+    // BUG-7: currently last_completed_at is null; after fix it is set so getMetrics holds the clock
+    assert.ok(r.body.task.last_completed_at, "last_completed_at should be set when completing via PATCH");
+    assert.equal(r.body.task.urgency_anchor_at, t.urgency_anchor_at);
+  });
+
   test("sorts by due proximity (absolute offset) not weight", async () => {
     // Create with controlled due offsets via days_ago relative to interval
     // due today: offset ~0
