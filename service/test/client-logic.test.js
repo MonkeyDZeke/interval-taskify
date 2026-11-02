@@ -5,7 +5,7 @@ const assert = require("node:assert/strict");
 const fs = require("fs");
 const path = require("path");
 
-const { buildTaskPayload } = require("../../clients/web-app/taskify-logic");
+const { buildTaskPayload, compareDue } = require("../../clients/web-app/taskify-logic");
 
 // Drift guard: the two copies must be functionally identical (plasma has only the .pragma line)
 test("plasma and web taskify-logic copies are in sync (modulo pragma)", () => {
@@ -61,5 +61,22 @@ describe("buildTaskPayload (BUG-4)", () => {
       is_recurring: false
     });
     assert.equal(Object.prototype.hasOwnProperty.call(payload, "days_ago"), false);
+  });
+});
+
+describe("compareDue (BUG-6)", () => {
+  test("tertiary tie-break is by id ascending, not title (matches server and spec)", () => {
+    const tasks = [
+      { id: 2, title: "aaa", metrics: { dueOffsetMs: 1000 } },
+      { id: 1, title: "zzz", metrics: { dueOffsetMs: 1000 } },
+    ];
+    const sorted = [...tasks].sort(compareDue);
+    assert.deepEqual(sorted.map(t => t.id), [1, 2]);
+  });
+
+  test("signed secondary: overdue before equal-distance future", () => {
+    const o = { id: 10, title: "o", metrics: { dueOffsetMs: -500 } };
+    const f = { id: 20, title: "f", metrics: { dueOffsetMs: 500 } };
+    assert.ok(compareDue(o, f) < 0);
   });
 });

@@ -293,13 +293,9 @@ function getFilteredTodos() {
     result.sort((l, r) => {
       const lm = getMetrics(l);
       const rm = getMetrics(r);
-      const la = Math.abs(lm.dueOffsetMs != null ? lm.dueOffsetMs : Infinity);
-      const ra = Math.abs(rm.dueOffsetMs != null ? rm.dueOffsetMs : Infinity);
-      if (la !== ra) return la - ra;
-      const lo = lm.dueOffsetMs != null ? lm.dueOffsetMs : 0;
-      const ro = rm.dueOffsetMs != null ? rm.dueOffsetMs : 0;
-      if (lo !== ro) return lo - ro; // overdue before future
-      return l.title.localeCompare(r.title);
+      const l2 = { ...l, metrics: lm };
+      const r2 = { ...r, metrics: rm };
+      return compareDue(l2, r2);
     });
   } else {
     result.sort((l, r) => {

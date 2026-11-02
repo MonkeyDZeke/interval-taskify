@@ -187,13 +187,9 @@ PlasmoidItem {
             filtered.sort(function(left, right) {
                 var lm = root.getMetrics(left)
                 var rm = root.getMetrics(right)
-                var la = Math.abs( (lm.dueOffsetMs != null ? lm.dueOffsetMs : 999999999) )
-                var ra = Math.abs( (rm.dueOffsetMs != null ? rm.dueOffsetMs : 999999999) )
-                if (la !== ra) return la - ra
-                var lo = lm.dueOffsetMs != null ? lm.dueOffsetMs : 0
-                var ro = rm.dueOffsetMs != null ? rm.dueOffsetMs : 0
-                if (lo !== ro) return lo - ro
-                return left.title.localeCompare(right.title)
+                var l2 = Object.assign({}, left, { metrics: lm })
+                var r2 = Object.assign({}, right, { metrics: rm })
+                return Logic.compareDue(l2, r2)
             })
         } else {
             filtered.sort(function(left, right) {

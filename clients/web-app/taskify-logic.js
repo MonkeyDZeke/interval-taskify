@@ -32,8 +32,20 @@ function buildTaskPayload(title, config) {
   return payload;
 }
 
-// Future: getOfflineMetrics, compareDue, offlineSummary will live here too.
+function compareDue(a, b) {
+  // Fixed for BUG-6: tertiary tie-break by id ascending (matches server/routes.js and due_proximity_view spec).
+  const getDue = (t) => (t.metrics && t.metrics.dueOffsetMs != null ? t.metrics.dueOffsetMs : null);
+  const la = Math.abs(getDue(a) != null ? getDue(a) : Infinity);
+  const ra = Math.abs(getDue(b) != null ? getDue(b) : Infinity);
+  if (la !== ra) return la - ra;
+  const lo = getDue(a) != null ? getDue(a) : 0;
+  const ro = getDue(b) != null ? getDue(b) : 0;
+  if (lo !== ro) return lo - ro;
+  return (a.id || 0) - (b.id || 0); // id ascending for stability
+}
+
+// Future: getOfflineMetrics, offlineSummary will live here too.
 
 if (typeof module !== "undefined" && module.exports) {
-  module.exports = { buildTaskPayload };
+  module.exports = { buildTaskPayload, compareDue };
 }

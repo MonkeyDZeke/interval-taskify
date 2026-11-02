@@ -731,9 +731,6 @@ implementation_status:
       title: "Client offline fallbacks do not match engine"
       details: "Web app.js getMetrics and Plasma main.qml getMetrics + capacity fallback ignore frozen_at / last_completed_at and use S * log ramp (no pre-epoch scaling). Server metrics hide the difference while online."
       related_punchlist: "due_proximity offline claim overstated"
-    - id: "BUG-6"
-      title: "Client due-sort tertiary tie-break uses title; server uses id"
-      details: "Brief and server sort spec say id ascending. Web and Plasma due sort fall back to title.localeCompare."
 
   fixed_bugs:
     - id: "BUG-1"
@@ -748,6 +745,9 @@ implementation_status:
     - id: "BUG-4"
       title: "UI edit of once-off tasks still submits days_ago (rounded elapsed), moving urgency_anchor_at and due date"
       fix: "Web and Plasma omit days_ago from write payloads when is_recurring=false (buildTaskPayload in shared taskify-logic.js). Recurring keeps the field. API clients wired to the builder."
+    - id: "BUG-6"
+      title: "Client due-sort tertiary tie-break uses title; server uses id"
+      fix: "compareDue in shared taskify-logic.js now uses id ascending. Web and Plasma due filters delegate to it (also fixes 999999999 sentinel for invalid)."
 
   known_gaps:
     - "No server-side validation rejecting non-positive interval_days (0 becomes 7 via ||; negatives stored and yield Invalid metrics)."
