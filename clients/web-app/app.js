@@ -1,6 +1,6 @@
 "use strict";
 
-const API_URL = ((window.ENV && window.ENV.API_URL) || "http://localhost:8085/api/v1").replace(/\/+$/, "");
+const API_URL = ((window.ENV && window.ENV.API_URL) || "http://localhost:8023/api/v1").replace(/\/+$/, "");
 
 const HALT_STATES = [
   { icon: "⏸", text: "Pause", value: "paused", tip: "Pause: stop tracking this task. When restarted, its clock begins again from zero." },

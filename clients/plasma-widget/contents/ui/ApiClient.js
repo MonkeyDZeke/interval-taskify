@@ -1,6 +1,6 @@
 .pragma library
 
-const baseUrl = "http://localhost:8085/api/v1"
+const baseUrl = "http://localhost:8023/api/v1"
 
 function request(method, path, body, callback) {
   const xhr = new XMLHttpRequest()

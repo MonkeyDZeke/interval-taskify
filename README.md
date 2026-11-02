@@ -44,12 +44,12 @@ npm start
 # npm run dev
 ```
 
-The service listens on `http://localhost:8080` by default.
+The service listens on `http://localhost:8023` by default.
 
 You can override the port and database location:
 
 ```bash
-PORT=8085 TASKIFY_DB=/path/to/tasks.db npm start
+PORT=8023 TASKIFY_DB=/path/to/tasks.db npm start
 ```
 
 ### 2. Plasma Widget (KDE 6)
@@ -79,7 +79,7 @@ During development you can use `./dev-reload.sh` to quickly reinstall and restar
 ```bash
 cd clients/web-app
 cp env.example.js env.js
-# Edit env.js and set the correct API_URL (e.g. http://localhost:8080/api/v1)
+# Edit env.js and set the correct API_URL (e.g. http://localhost:8023/api/v1)
 ```
 
 Open `index.html` in a browser.
@@ -112,16 +112,16 @@ taskify top 5
 Set a custom service URL if needed:
 
 ```bash
-export TASKIFY_URL=http://localhost:8080/api/v1
+export TASKIFY_URL=http://localhost:8023/api/v1
 ```
 
 ## Configuration & Environment
 
 | Variable       | Default                        | Used by     |
 |----------------|--------------------------------|-------------|
-| `PORT`         | 8080                           | Service     |
+| `PORT`         | 8023                           | Service     |
 | `TASKIFY_DB`   | `service/data/tasks.db`        | Service     |
-| `TASKIFY_URL`  | `http://localhost:8085/api/v1` | CLI         |
+| `TASKIFY_URL`  | `http://localhost:8023/api/v1` | CLI         |
 | `API_URL`      | (in `env.js`)                  | Web App     |
 
 ## Development
