@@ -125,13 +125,15 @@ PlasmoidItem {
             }
         }
 
-        // Fallback calculation for offline rendering
+        // Fallback calculation for offline rendering -- delegate to shared (BUG-5)
+        if (Logic && Logic.getOfflineMetrics) {
+            return Logic.getOfflineMetrics(todo, Date.now())
+        }
         var intervalDays = Number(todo.interval_days)
         var anchor = Date.parse(todo.urgency_anchor_at)
         if (!isFinite(intervalDays) || intervalDays <= 0 || !isFinite(anchor)) {
             return { elapsedDays: 0, x: 0, weight: 0, statusText: "Invalid", dueOffsetMs: null }
         }
-
         var elapsedDays = Math.max(0, (Date.now() - anchor) / 86400000)
         var x = elapsedDays / intervalDays
         var significance = Number(todo.significance)

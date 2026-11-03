@@ -227,15 +227,8 @@ function getMetrics(todo) {
   if (!isFinite(intervalDays) || intervalDays <= 0 || !isFinite(anchor)) {
     return { elapsedDays: 0, x: 0, weight: 0, statusText: "Invalid", dueOffsetMs: null };
   }
-  const elapsedDays = Math.max(0, (Date.now() - anchor) / 86400000);
-  const x = elapsedDays / intervalDays;
-  const significance = Number(todo.significance);
-  const weight = x <= 1
-    ? significance * Math.log(1 + 10 * x) / Math.log(11)
-    : significance * Math.exp(1.386 * (x - 1));
-  const dueAt = anchor + intervalDays * 86400000;
-  const dueOffsetMs = dueAt - Date.now();
-  return { elapsedDays, x, weight, statusText: "", dueOffsetMs };
+  // Use shared offline implementation (BUG-5 parity)
+  return getOfflineMetrics ? getOfflineMetrics(todo, Date.now()) : { elapsedDays: 0, x: 0, weight: 0, statusText: "", dueOffsetMs: null };
 }
 
 function getStatusText(todo) {

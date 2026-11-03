@@ -726,11 +726,7 @@ implementation_status:
       - { feature: "SQLite persistence with versioned migrations", done: true }
       - { feature: "Service test suite (engine, db, API) via node:test", done: true }
 
-  known_bugs:
-    - id: "BUG-5"
-      title: "Client offline fallbacks do not match engine"
-      details: "Web app.js getMetrics and Plasma main.qml getMetrics + capacity fallback ignore frozen_at / last_completed_at and use S * log ramp (no pre-epoch scaling). Server metrics hide the difference while online."
-      related_punchlist: "due_proximity offline claim overstated"
+  known_bugs: []
 
   fixed_bugs:
     - id: "BUG-1"
@@ -742,9 +738,9 @@ implementation_status:
     - id: "BUG-3"
       title: "Once-off task handling differed between create and update"
       fix: "updateTask with days_ago now leaves last_completed_at null for once-off tasks, matching createTask, and honours is_recurring changed in the same call."
-    - id: "BUG-4"
-      title: "UI edit of once-off tasks still submits days_ago (rounded elapsed), moving urgency_anchor_at and due date"
-      fix: "Web and Plasma omit days_ago from write payloads when is_recurring=false (buildTaskPayload in shared taskify-logic.js). Recurring keeps the field. API clients wired to the builder."
+    - id: "BUG-5"
+      title: "Client offline fallbacks do not match engine"
+      fix: "getOfflineMetrics in shared taskify-logic.js now replicates engine.getMetrics exactly (effective clock for frozen/completed, pre-epoch prefactor * ramp). Clients delegate fallback to it. dueOffsetMs and statusText also match."
     - id: "BUG-6"
       title: "Client due-sort tertiary tie-break uses title; server uses id"
       fix: "compareDue in shared taskify-logic.js now uses id ascending. Web and Plasma due filters delegate to it (also fixes 999999999 sentinel for invalid)."
@@ -753,7 +749,6 @@ implementation_status:
     - "No server-side validation rejecting non-positive interval_days (0 becomes 7 via ||; negatives stored and yield Invalid metrics)."
     - "Client capacity fallbacks (web app.js getMetrics, Plasma main.qml, CLI) and offline summary still hardcode 12 AU baseline and ignore energy_factor (BUG-5 related)."
     - "Web title search (substring + regex) is purely client-side; no server-side search or filter by title exists."
-    - "Client offline due/weight fallbacks do not yet fully match server engine clock rules for frozen/completed or pre-epoch scaling (see BUG-5)."
 
   implementation_order:
     description: "Sequence chosen to protect operational stability. Defaults must reproduce current behavior at every step. Engine changes must update all client fallbacks in the same slice."

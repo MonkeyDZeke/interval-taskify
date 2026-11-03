@@ -5,7 +5,8 @@ const assert = require("node:assert/strict");
 const fs = require("fs");
 const path = require("path");
 
-const { buildTaskPayload, compareDue } = require("../../clients/web-app/taskify-logic");
+const { buildTaskPayload, compareDue, getOfflineMetrics } = require("../../clients/web-app/taskify-logic");
+const engine = require("../src/engine");
 
 // Drift guard: the two copies must be functionally identical (plasma has only the .pragma line)
 test("plasma and web taskify-logic copies are in sync (modulo pragma)", () => {
@@ -78,5 +79,46 @@ describe("compareDue (BUG-6)", () => {
     const o = { id: 10, title: "o", metrics: { dueOffsetMs: -500 } };
     const f = { id: 20, title: "f", metrics: { dueOffsetMs: 500 } };
     assert.ok(compareDue(o, f) < 0);
+  });
+});
+
+describe("getOfflineMetrics (BUG-5)", () => {
+  const NOW = Date.parse("2026-01-31T00:00:00.000Z");
+  const DAY = 86400000;
+  const ago = d => new Date(NOW - d * DAY).toISOString();
+
+  function task(overrides = {}) {
+    return {
+      interval_days: 10,
+      significance: 4.0,
+      effort: 1.0,
+      domain: "executive_mental",
+      state: "active",
+      is_recurring: 1,
+      urgency_anchor_at: new Date(NOW).toISOString(),
+      frozen_at: null,
+      last_completed_at: null,
+      ...overrides
+    };
+  }
+
+  test("matches engine.getMetrics for fresh, due, overdue (pre-epoch scaling)", () => {
+    for (const d of [0, 3, 5, 10, 15]) {
+      const t = task({ urgency_anchor_at: ago(d) });
+      assert.deepEqual(getOfflineMetrics(t, NOW), engine.getMetrics(t, NOW));
+    }
+  });
+
+  test("matches engine for frozen and completed clocks", () => {
+    const frozen = task({ state: "frozen", urgency_anchor_at: ago(10), frozen_at: ago(5) });
+    assert.deepEqual(getOfflineMetrics(frozen, NOW), engine.getMetrics(frozen, NOW));
+
+    const completed = task({ state: "completed", is_recurring: 0, urgency_anchor_at: ago(10), last_completed_at: ago(4) });
+    assert.deepEqual(getOfflineMetrics(completed, NOW), engine.getMetrics(completed, NOW));
+  });
+
+  test("dueOffsetMs matches engine (effective clock)", () => {
+    const t = task({ urgency_anchor_at: ago(8) });
+    assert.equal(getOfflineMetrics(t, NOW).dueOffsetMs, engine.getMetrics(t, NOW).dueOffsetMs);
   });
 });

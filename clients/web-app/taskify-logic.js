@@ -44,8 +44,56 @@ function compareDue(a, b) {
   return (a.id || 0) - (b.id || 0); // id ascending for stability
 }
 
-// Future: getOfflineMetrics, offlineSummary will live here too.
+function getOfflineMetrics(task, nowMs = Date.now()) {
+  const intervalDays = Number(task.interval_days);
+  const significance = Number(task.significance);
+  const anchorMs = Date.parse(task.urgency_anchor_at);
+  if (!isFinite(intervalDays) || intervalDays <= 0 || !isFinite(anchorMs)) {
+    return { elapsedDays: 0, x: 0, weight: 0, statusText: "Invalid", dueOffsetMs: null };
+  }
+
+  // Effective clock: matches engine
+  const effectiveNowMs = (task.state === "frozen" && task.frozen_at)
+    ? Date.parse(task.frozen_at)
+    : (task.state === "completed" && task.last_completed_at)
+      ? Date.parse(task.last_completed_at)
+      : nowMs;
+
+  const elapsedDays = Math.max(0, (effectiveNowMs - anchorMs) / 86400000);
+  const x = elapsedDays / intervalDays;
+
+  const A = 10.0;
+  const B = 1.386;
+  const ramp = Math.log(1.0 + A * Math.min(x, 1.0)) / Math.log(1.0 + A);
+  const weight = x <= 1.0
+    ? (1.0 + (significance - 1.0) * x) * ramp
+    : significance * Math.exp(B * (x - 1.0));
+
+  const dueAt = anchorMs + intervalDays * 86400000;
+  const dueOffsetMs = dueAt - effectiveNowMs;
+
+  const diffDays = Math.round(intervalDays - elapsedDays);
+  let statusText = "";
+  if (task.state !== "active") {
+    statusText = task.state.toUpperCase();
+  } else if (diffDays > 0) {
+    statusText = `Due in ${diffDays} ${diffDays === 1 ? 'day' : 'days'}`;
+  } else if (diffDays === 0) {
+    statusText = "Due today";
+  } else {
+    const overdueDays = Math.abs(diffDays);
+    statusText = `Overdue ${overdueDays} ${overdueDays === 1 ? 'day' : 'days'}`;
+  }
+
+  return {
+    elapsedDays: Number(elapsedDays.toFixed(2)),
+    x: Number(x.toFixed(2)),
+    weight: Number(weight.toFixed(2)),
+    statusText,
+    dueOffsetMs: Number(dueOffsetMs)
+  };
+}
 
 if (typeof module !== "undefined" && module.exports) {
-  module.exports = { buildTaskPayload, compareDue };
+  module.exports = { buildTaskPayload, compareDue, getOfflineMetrics };
 }
