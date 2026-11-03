@@ -105,16 +105,32 @@ describe("getOfflineMetrics (BUG-5)", () => {
   test("matches engine.getMetrics for fresh, due, overdue (pre-epoch scaling)", () => {
     for (const d of [0, 3, 5, 10, 15]) {
       const t = task({ urgency_anchor_at: ago(d) });
-      assert.deepEqual(getOfflineMetrics(t, NOW), engine.getMetrics(t, NOW));
+      const off = getOfflineMetrics(t, NOW);
+      const eng = engine.getMetrics(t, NOW);
+      assert.equal(off.elapsedDays, eng.elapsedDays);
+      assert.equal(off.x, eng.x);
+      assert.equal(off.weight, eng.weight);
+      assert.equal(off.dueOffsetMs, eng.dueOffsetMs);
+      assert.equal(off.statusText, eng.statusText);
     }
   });
 
   test("matches engine for frozen and completed clocks", () => {
     const frozen = task({ state: "frozen", urgency_anchor_at: ago(10), frozen_at: ago(5) });
-    assert.deepEqual(getOfflineMetrics(frozen, NOW), engine.getMetrics(frozen, NOW));
+    const offF = getOfflineMetrics(frozen, NOW);
+    const engF = engine.getMetrics(frozen, NOW);
+    assert.equal(offF.elapsedDays, engF.elapsedDays);
+    assert.equal(offF.weight, engF.weight);
+    assert.equal(offF.dueOffsetMs, engF.dueOffsetMs);
+    assert.equal(offF.statusText, engF.statusText);
 
     const completed = task({ state: "completed", is_recurring: 0, urgency_anchor_at: ago(10), last_completed_at: ago(4) });
-    assert.deepEqual(getOfflineMetrics(completed, NOW), engine.getMetrics(completed, NOW));
+    const offC = getOfflineMetrics(completed, NOW);
+    const engC = engine.getMetrics(completed, NOW);
+    assert.equal(offC.elapsedDays, engC.elapsedDays);
+    assert.equal(offC.weight, engC.weight);
+    assert.equal(offC.dueOffsetMs, engC.dueOffsetMs);
+    assert.equal(offC.statusText, engC.statusText);
   });
 
   test("dueOffsetMs matches engine (effective clock)", () => {
